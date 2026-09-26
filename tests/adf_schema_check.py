@@ -18,7 +18,7 @@ def main() -> int:
     assert schema_path.is_file()
     assert directory.is_dir()
 
-    schema = json.loads(schema_path.read_text())
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
     validator = jsonschema.Draft4Validator(schema)
     failures = 0
     checked = 0
@@ -27,7 +27,7 @@ def main() -> int:
         checked += 1
 
         try:
-            document = json.loads(path.read_text())
+            document = json.loads(path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as error:
             failures += 1
             print(f'{path.name}: invalid JSON: {error}')
