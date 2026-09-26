@@ -1,0 +1,3 @@
+Soft hyphen: \[\]
+
+Non-breaking hyphen: \[-\]

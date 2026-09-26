@@ -1,0 +1,7 @@
+TextFill:
+
+NoFill
+
+SolidFill
+
+GradientFill

@@ -1,0 +1,7 @@
+This is all in an **italic style**.
+
+This is an italic style with some words unitalicized.
+
+This is all in a *strong style*.
+
+This is a strong style with some words ubolded.

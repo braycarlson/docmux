@@ -1,0 +1,7 @@
+* text=auto eol=lf
+
+*.png binary
+*.docx binary
+
+tests/corpus/** -text
+tests/fixtures/** -text

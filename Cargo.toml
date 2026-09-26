@@ -1,0 +1,126 @@
+[workspace]
+members = ["tests/support"]
+exclude = ["fuzz"]
+
+[package]
+name = "docmux"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/braycarlson/docmux"
+description = "Static-memory document conversion between Markdown, DOCX, and Atlassian Document Format."
+keywords = ["markdown", "docx", "adf", "confluence", "no-std"]
+categories = ["text-processing", "no-std", "parser-implementations"]
+readme = "README.md"
+exclude = ["assets/", "fuzz/", "tests/corpus/", "tests/fixtures/"]
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+
+[dev-dependencies]
+docmux-support = { path = "tests/support" }
+
+[lints]
+workspace = true
+
+[workspace.lints.rust]
+elided_lifetimes_in_paths = "warn"
+explicit_outlives_requirements = "warn"
+let_underscore_drop = "warn"
+macro_use_extern_crate = "warn"
+meta_variable_misuse = "warn"
+missing_abi = "warn"
+missing_debug_implementations = "warn"
+non_ascii_idents = "warn"
+trivial_casts = "warn"
+trivial_numeric_casts = "warn"
+unit_bindings = "warn"
+unreachable_pub = "warn"
+unused_import_braces = "warn"
+unused_lifetimes = "warn"
+unused_macro_rules = "warn"
+unused_qualifications = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+collapsible_if = "allow"
+collapsible_match = "allow"
+redundant_pub_crate = "allow"
+large_stack_arrays = "allow"
+manual_assert_eq = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+significant_drop_tightening = "allow"
+absolute_paths = "warn"
+allow_attributes = "warn"
+allow_attributes_without_reason = "warn"
+assertions_on_result_states = "warn"
+create_dir = "warn"
+dbg_macro = "warn"
+default_numeric_fallback = "warn"
+empty_enum_variants_with_brackets = "warn"
+empty_structs_with_brackets = "warn"
+exit = "warn"
+expect_used = "warn"
+filetype_is_file = "warn"
+float_arithmetic = "warn"
+fn_to_numeric_cast_any = "warn"
+format_push_string = "warn"
+get_unwrap = "warn"
+if_then_some_else_none = "warn"
+impl_trait_in_params = "warn"
+infinite_loop = "warn"
+iter_over_hash_type = "warn"
+let_underscore_must_use = "warn"
+let_underscore_untyped = "warn"
+lossy_float_literal = "warn"
+map_err_ignore = "warn"
+mem_forget = "warn"
+min_ident_chars = "warn"
+missing_asserts_for_indexing = "warn"
+modulo_arithmetic = "warn"
+multiple_inherent_impl = "warn"
+multiple_unsafe_ops_per_block = "warn"
+mutex_atomic = "warn"
+mutex_integer = "warn"
+needless_raw_strings = "warn"
+needless_raw_string_hashes = "warn"
+partial_pub_fields = "warn"
+precedence_bits = "warn"
+rc_buffer = "warn"
+rc_mutex = "warn"
+redundant_test_prefix = "warn"
+redundant_type_annotations = "warn"
+ref_patterns = "warn"
+rest_pat_in_fully_bound_structs = "warn"
+return_and_then = "warn"
+same_name_method = "warn"
+shadow_same = "warn"
+shadow_unrelated = "warn"
+str_to_string = "warn"
+suspicious_xor_used_as_pow = "warn"
+todo = "warn"
+try_err = "warn"
+unimplemented = "warn"
+unnecessary_safety_doc = "warn"
+unnecessary_self_imports = "warn"
+unneeded_field_pattern = "warn"
+unused_trait_names = "warn"
+unwrap_used = "warn"
+verbose_file_reads = "warn"
+wildcard_enum_match_arm = "warn"
+
+[profile.dev]
+debug = "line-tables-only"
+panic = "abort"
+
+[profile.release]
+codegen-units = 1
+lto = "fat"
+overflow-checks = true
+panic = "abort"
+strip = "symbols"

@@ -1,0 +1,60 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - run: pip install jsonschema
+
+      - run: cargo +nightly fmt --check
+
+      - run: cargo clippy --workspace --all-targets -- --deny warnings
+
+      - run: cargo test
+
+      - run: cargo test --release
+
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@nightly
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz
+
+      - run: cargo install cargo-fuzz
+
+      - run: cargo +nightly fuzz build

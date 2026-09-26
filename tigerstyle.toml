@@ -1,0 +1,5 @@
+extend_exclude = ["target/**"]
+select = ["ALL"]
+
+[per-file-ignores]
+"tests/support/**" = ["TS005", "TS019"]

@@ -1,0 +1,15 @@
+[package]
+name = "docmux-support"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "Allocation guard and shared statics for the docmux test and fuzz binaries."
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+docmux = { path = "../.." }
+
+[lints]
+workspace = true

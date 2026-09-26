@@ -1,0 +1,38 @@
+[package]
+name = "docmux-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.docmux]
+path = ".."
+
+[dependencies.docmux-support]
+path = "../tests/support"
+
+[[bin]]
+name = "markdown"
+path = "fuzz_targets/markdown.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "docx"
+path = "fuzz_targets/docx.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "adf"
+path = "fuzz_targets/adf.rs"
+test = false
+doc = false
+bench = false

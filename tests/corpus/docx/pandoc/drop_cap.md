@@ -1,0 +1,11 @@
+D
+
+rop cap.
+
+Next paragraph.
+
+D
+
+rop cap in margin.
+
+Drop cap (not really).

@@ -1,0 +1,5 @@
+One link to one target.
+
+This is a target with two names.
+
+Another link to the same target.

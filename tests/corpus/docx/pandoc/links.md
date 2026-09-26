@@ -1,0 +1,13 @@
+## An internal link and an external link
+
+An [external link](http://google.com) to a popular website.
+
+An [external link](http://pandoc.org/README.html) to a website with an anchor.
+
+An internal link to a section header.
+
+An internal link to a bookmark.
+
+## A section for testing link targets
+
+A bookmark right here

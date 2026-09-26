@@ -1,0 +1,3 @@
+| col1Header | col2Header | col3Header |
+| :-: | :-: | :-: |
+| col1 content | Body copy | col3 content |

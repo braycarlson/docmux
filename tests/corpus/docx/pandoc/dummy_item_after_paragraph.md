@@ -1,0 +1,5 @@
+First bullet point created and then deleted
+
+A normal paragraph
+
+First bullet point created and then deleted after the normal paragraph
