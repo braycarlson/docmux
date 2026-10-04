@@ -239,9 +239,9 @@ pub(crate) fn style_kind(part: Part<'_>, styles: &[DocxStyle], identifier: &[u8]
 
 #[derive(Clone, Copy, Debug)]
 struct NumberingCursor {
-    abstract_index: Option<usize>,
+    abstract_index: Option<u32>,
     level: u32,
-    numbering_index: Option<usize>,
+    numbering_index: Option<u32>,
 }
 
 pub(crate) struct NumberingTables<'a> {
@@ -318,8 +318,8 @@ fn abstract_event(
             abstracts[index] =
                 DocxAbstract { identifier: identifier.unwrap_or(u32::MAX), ..DocxAbstract::EMPTY };
 
+            cursor.abstract_index = Some(*abstract_count);
             *abstract_count += 1;
-            cursor.abstract_index = Some(index);
         }
         b"w:lvl" => {
             let parsed = Attributes::get(element.attributes, b"w:ilvl").and_then(decimal_parse_u32);
@@ -329,13 +329,13 @@ fn abstract_event(
             if let (Some(index), Some(start), true) =
                 (cursor.abstract_index, value.and_then(decimal_parse_u32), level_ok)
             {
-                abstracts[index].levels[level].start = start;
+                abstracts[index as usize].levels[level].start = start;
             }
         }
         b"w:numFmt" => {
             if let (Some(index), Some(format), true) = (cursor.abstract_index, value, level_ok) {
                 let ordered = format != b"bullet" && format != b"none";
-                abstracts[index].levels[level].ordered = ordered;
+                abstracts[index as usize].levels[level].ordered = ordered;
             }
         }
         _ => {}
@@ -374,13 +374,12 @@ fn instance_event(
                 ..DocxNumbering::EMPTY
             };
 
+            cursor.numbering_index = Some(*numbering_count);
             *numbering_count += 1;
-
-            cursor.numbering_index = Some(index);
         }
         b"w:abstractNumId" => {
             if let (Some(index), Some(abstract_identifier)) = (cursor.numbering_index, value) {
-                numberings[index].abstract_identifier = abstract_identifier;
+                numberings[index as usize].abstract_identifier = abstract_identifier;
             }
         }
         b"w:lvlOverride" => {
@@ -391,7 +390,7 @@ fn instance_event(
             let level_ok = cursor.level < DOCX_LEVEL_COUNT_MAX;
 
             if let (Some(index), Some(start), true) = (cursor.numbering_index, value, level_ok) {
-                numberings[index].start_overrides[level] = start;
+                numberings[index as usize].start_overrides[level] = start;
             }
         }
         _ => {}

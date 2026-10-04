@@ -1,4 +1,4 @@
-use crate::bytes::{u16_from_usize, u32_from_usize, utf8_encode};
+use crate::bytes::{range_from_u32, range_from_usize, u16_from_usize, u32_from_usize, utf8_encode};
 use crate::document::{Document, Marks, NodeKind, Span, TextRun};
 use crate::entities::entity_lookup;
 use crate::error::{Error, Result};
@@ -11,9 +11,9 @@ pub(crate) const INLINE_TOKEN_COUNT_MAX: u32 = 8192;
 pub(crate) const LABEL_LENGTH_MAX: usize = 999;
 const BRACKET_STACK_MAX: u32 = 256;
 const DELIMITER_LITERAL_MAX: u32 = 16;
-const ENTITY_NAME_LENGTH_MAX: usize = 31;
+const ENTITY_NAME_LENGTH_MAX: u32 = 31;
 const PARENTHESIS_DEPTH_MAX: u32 = 32;
-const SCHEME_LENGTH_MAX: usize = 32;
+const SCHEME_LENGTH_MAX: u32 = 32;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
@@ -83,7 +83,7 @@ impl InlineToken {
 #[derive(Clone, Debug)]
 pub(crate) struct Destination {
     pub(crate) after: u32,
-    pub(crate) inner: Range<usize>,
+    pub(crate) inner: Range<u32>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -116,9 +116,9 @@ struct Tokenizer<'a> {
     brackets: [u32; BRACKET_STACK_MAX as usize],
     count: u32,
     definitions: &'a [LinkDefinition],
-    position: usize,
+    position: u32,
     source: &'a [u8],
-    text_start: usize,
+    text_start: u32,
 }
 
 fn tokenize(
@@ -142,11 +142,11 @@ fn tokenize(
     };
 
     for _ in 0..source.len() {
-        if tokenizer.position >= source.len() {
+        if tokenizer.position as usize >= source.len() {
             break;
         }
 
-        let byte = source[tokenizer.position];
+        let byte = source[tokenizer.position as usize];
 
         let consumed = match byte {
             b'\\' => tokenizer.backslash(tokens)?,
@@ -179,7 +179,7 @@ fn tokenize(
     tokenizer.text_flush(tokens)?;
     tokenizer.brackets_deactivate_all(tokens);
 
-    assert!(tokenizer.position == source.len());
+    assert!(tokenizer.position as usize == source.len());
     assert!(tokenizer.count as usize <= tokens.len());
 
     Ok(tokenizer.count)
@@ -207,7 +207,10 @@ impl Tokenizer<'_> {
         assert!(self.text_start <= self.position);
 
         if self.text_start < self.position {
-            let token = InlineToken::new(InlineTokenKind::Text, self.text_start..self.position);
+            let token = InlineToken::new(
+                InlineTokenKind::Text,
+                self.text_start as usize..self.position as usize,
+            );
 
             self.append(tokens, token)?;
         }
@@ -220,26 +223,26 @@ impl Tokenizer<'_> {
     }
 
     fn token_emit(&mut self, tokens: &mut [InlineToken], token: InlineToken) -> Result<bool> {
-        assert!(token.start as usize == self.position);
+        assert!(token.start as usize == self.position as usize);
         assert!(token.end as usize <= self.source.len());
 
         self.text_flush(tokens)?;
         self.append(tokens, token)?;
-        self.position = token.end as usize;
+        self.position = token.end;
         self.text_start = self.position;
 
         Ok(true)
     }
 
     fn backslash(&mut self, tokens: &mut [InlineToken]) -> Result<bool> {
-        assert!(self.source[self.position] == b'\\');
+        assert!(self.source[self.position as usize] == b'\\');
         assert!(self.count as usize <= tokens.len());
 
-        let next = self.source.get(self.position + 1).copied();
+        let next = self.source.get(self.position as usize + 1).copied();
 
         match next {
             Some(b'\n') => {
-                let start = self.position;
+                let start = self.position as usize;
                 let token = InlineToken::new(InlineTokenKind::HardBreak, start..start + 2);
 
                 self.token_emit(tokens, token)?;
@@ -257,12 +260,12 @@ impl Tokenizer<'_> {
     }
 
     fn line_ending(&mut self, tokens: &mut [InlineToken]) -> Result<bool> {
-        assert!(self.source[self.position] == b'\n');
+        assert!(self.source[self.position as usize] == b'\n');
         assert!(self.text_start <= self.position);
 
-        let line_end = self.position;
+        let line_end = self.position as usize;
 
-        let trailing_spaces = self.source[self.text_start..line_end]
+        let trailing_spaces = self.source[self.text_start as usize..line_end]
             .iter()
             .rev()
             .take_while(|&&byte| byte == b' ')
@@ -271,8 +274,8 @@ impl Tokenizer<'_> {
         let hard = trailing_spaces >= 2;
         let text_end = line_end - trailing_spaces;
 
-        if self.text_start < text_end {
-            let token = InlineToken::new(InlineTokenKind::Text, self.text_start..text_end);
+        if (self.text_start as usize) < text_end {
+            let token = InlineToken::new(InlineTokenKind::Text, self.text_start as usize..text_end);
 
             self.append(tokens, token)?;
         }
@@ -281,7 +284,7 @@ impl Tokenizer<'_> {
         let token = InlineToken::new(kind, text_end..line_end + 1);
 
         self.append(tokens, token)?;
-        self.position = line_end + 1;
+        self.position = u32_from_usize(line_end + 1);
         self.text_start = self.position;
 
         self.line_start_skip();
@@ -290,33 +293,33 @@ impl Tokenizer<'_> {
     }
 
     fn line_start_skip(&mut self) {
-        assert!(self.position <= self.source.len());
+        assert!(self.position as usize <= self.source.len());
 
-        let rest = &self.source[self.position..];
+        let rest = &self.source[self.position as usize..];
         let skipped = rest.iter().take_while(|&&byte| byte == b' ' || byte == b'\t').count();
-        self.position += skipped;
+        self.position += u32_from_usize(skipped);
         self.text_start = self.position;
 
-        assert!(self.position <= self.source.len());
+        assert!(self.position as usize <= self.source.len());
     }
 
     fn backtick(&mut self, tokens: &mut [InlineToken]) -> Result<bool> {
-        assert!(self.source[self.position] == b'`');
+        assert!(self.source[self.position as usize] == b'`');
         assert!(self.count as usize <= tokens.len());
 
-        let rest = &self.source[self.position..];
+        let rest = &self.source[self.position as usize..];
         let run = rest.iter().take_while(|&&byte| byte == b'`').count();
 
         if u16::try_from(run).is_err() {
-            self.position += run;
+            self.position += u32_from_usize(run);
 
             return Ok(true);
         }
 
-        let content_start = self.position + run;
+        let content_start = self.position as usize + run;
 
         let Some(content_length) = backtick_closer_find(&self.source[content_start..], run) else {
-            self.position += run;
+            self.position += u32_from_usize(run);
 
             return Ok(true);
         };
@@ -330,36 +333,36 @@ impl Tokenizer<'_> {
 
         self.text_flush(tokens)?;
         self.append(tokens, token)?;
-        self.position = content_end + run;
+        self.position = u32_from_usize(content_end + run);
         self.text_start = self.position;
 
         Ok(true)
     }
 
     fn delimiter(&mut self, tokens: &mut [InlineToken], character: u8) -> Result<bool> {
-        assert!(self.source[self.position] == character);
+        assert!(self.source[self.position as usize] == character);
         assert!(matches!(character, b'*' | b'_' | b'~'));
 
-        let rest = &self.source[self.position..];
+        let rest = &self.source[self.position as usize..];
         let run = rest.iter().take_while(|&&byte| byte == character).count();
 
         if u16::try_from(run).is_err() {
-            self.position += run;
+            self.position += u32_from_usize(run);
 
             return Ok(true);
         }
 
         if character == b'~' {
             if run > 2 {
-                self.position += run;
+                self.position += u32_from_usize(run);
 
                 return Ok(true);
             }
         }
 
         let neighbours = Neighbours {
-            after: char_after(self.source, self.position + run),
-            before: char_before(self.source, self.position),
+            after: char_after(self.source, self.position as usize + run),
+            before: char_before(self.source, self.position as usize),
         };
 
         let (can_open, can_close) = flanking(character, neighbours);
@@ -371,7 +374,7 @@ impl Tokenizer<'_> {
             count: u16_from_usize(run),
             ..InlineToken::new(
                 InlineTokenKind::Delimiter { character },
-                self.position..self.position + run,
+                self.position as usize..self.position as usize + run,
             )
         };
 
@@ -385,7 +388,7 @@ impl Tokenizer<'_> {
         let length = if image { 2 } else { 1 };
 
         if image {
-            if self.source.get(self.position + 1) != Some(&b'[') {
+            if self.source.get(self.position as usize + 1) != Some(&b'[') {
                 return Ok(false);
             }
         }
@@ -398,13 +401,13 @@ impl Tokenizer<'_> {
 
         let token = InlineToken {
             active: true,
-            ..InlineToken::new(kind, self.position..self.position + length)
+            ..InlineToken::new(kind, self.position as usize..self.position as usize + length)
         };
 
         self.text_flush(tokens)?;
 
         let index = self.append(tokens, token)?;
-        self.position = token.end as usize;
+        self.position = token.end;
         self.text_start = self.position;
         self.brackets[self.bracket_count as usize] = u32_from_usize(index);
         self.bracket_count += 1;
@@ -417,7 +420,7 @@ impl Tokenizer<'_> {
         tokens: &mut [InlineToken],
         document: &mut Document,
     ) -> Result<bool> {
-        assert!(self.source[self.position] == b']');
+        assert!(self.source[self.position as usize] == b']');
         assert!(self.bracket_count as usize <= self.brackets.len());
 
         if self.bracket_count == 0 {
@@ -436,7 +439,7 @@ impl Tokenizer<'_> {
 
         self.text_flush(tokens)?;
 
-        let close_start = self.position;
+        let close_start = self.position as usize;
 
         let Some((href, resolved_end)) = self.link_resolve(tokens, opener, document)? else {
             tokens[opener].kind = InlineTokenKind::Text;
@@ -448,7 +451,7 @@ impl Tokenizer<'_> {
         let kind = if image { InlineTokenKind::ImageClose } else { InlineTokenKind::LinkClose };
         let token = InlineToken::new(kind, close_start..resolved_end);
         let closer = self.append(tokens, token)?;
-        self.position = resolved_end;
+        self.position = u32_from_usize(resolved_end);
         self.text_start = self.position;
 
         emphasis_process(&mut tokens[opener + 1..closer]);
@@ -496,15 +499,15 @@ impl Tokenizer<'_> {
         document: &mut Document,
     ) -> Result<Option<(Span, usize)>> {
         assert!(opener < self.count as usize);
-        assert!(self.source[self.position] == b']');
+        assert!(self.source[self.position as usize] == b']');
 
-        let after_bracket = self.position + 1;
+        let after_bracket = self.position as usize + 1;
 
         if let Some((href, end)) = inline_destination_parse(self.source, after_bracket, document)? {
             return Ok(Some((href, end)));
         }
 
-        let text_range = tokens[opener].end as usize..self.position;
+        let text_range = tokens[opener].end as usize..self.position as usize;
 
         let (label_range, end) = match reference_label_parse(self.source, after_bracket) {
             Some((range, end)) if !range.is_empty() => (range, end),
@@ -532,7 +535,7 @@ impl Tokenizer<'_> {
         tokens: &mut [InlineToken],
         document: &mut Document,
     ) -> Result<bool> {
-        assert!(self.source[self.position] == b'<');
+        assert!(self.source[self.position as usize] == b'<');
         assert!(self.count as usize <= tokens.len());
 
         if self.angle_autolink(tokens, document)? {
@@ -547,10 +550,10 @@ impl Tokenizer<'_> {
         tokens: &mut [InlineToken],
         document: &mut Document,
     ) -> Result<bool> {
-        assert!(self.source[self.position] == b'<');
+        assert!(self.source[self.position as usize] == b'<');
         assert!(document.node_count() >= 1);
 
-        let rest = &self.source[self.position + 1..];
+        let rest = &self.source[self.position as usize + 1..];
 
         let Some(length) = rest.iter().position(|&byte| byte == b'>') else {
             return Ok(false);
@@ -580,7 +583,7 @@ impl Tokenizer<'_> {
             document.text_append(body)?
         };
 
-        let start = self.position + 1;
+        let start = self.position as usize + 1;
 
         let token = InlineToken {
             href,
@@ -589,7 +592,7 @@ impl Tokenizer<'_> {
 
         self.text_flush(tokens)?;
         self.append(tokens, token)?;
-        self.position = start + length + 1;
+        self.position = u32_from_usize(start + length + 1);
         self.text_start = self.position;
 
         Ok(true)
@@ -600,14 +603,15 @@ impl Tokenizer<'_> {
         tokens: &mut [InlineToken],
         document: &mut Document,
     ) -> Result<bool> {
-        assert!(self.source[self.position] == b'@');
+        assert!(self.source[self.position as usize] == b'@');
         assert!(document.node_count() >= 1);
 
         if self.bracket_count > 0 {
             return Ok(false);
         }
 
-        let Some(domain_length) = email_domain_length(&self.source[self.position + 1..]) else {
+        let Some(domain_length) = email_domain_length(&self.source[self.position as usize + 1..])
+        else {
             return Ok(false);
         };
 
@@ -615,10 +619,10 @@ impl Tokenizer<'_> {
             return Ok(false);
         };
 
-        let end = self.position + 1 + domain_length;
+        let end = self.position as usize + 1 + domain_length;
 
-        if start > self.text_start {
-            let token = InlineToken::new(InlineTokenKind::Text, self.text_start..start);
+        if start > self.text_start as usize {
+            let token = InlineToken::new(InlineTokenKind::Text, self.text_start as usize..start);
 
             self.append(tokens, token)?;
         }
@@ -629,8 +633,8 @@ impl Tokenizer<'_> {
         let token = InlineToken { href, ..InlineToken::new(InlineTokenKind::Autolink, start..end) };
 
         self.append(tokens, token)?;
-        self.position = end;
-        self.text_start = end;
+        self.position = u32_from_usize(end);
+        self.text_start = u32_from_usize(end);
 
         Ok(true)
     }
@@ -639,9 +643,9 @@ impl Tokenizer<'_> {
         assert!(self.text_start <= self.position);
         assert!(self.count as usize <= tokens.len());
 
-        let run = &self.source[self.text_start..self.position];
+        let run = &self.source[self.text_start as usize..self.position as usize];
         let run_local = run.iter().rev().take_while(|&&byte| email_local_ok(byte)).count();
-        let mut start = self.position - run_local;
+        let mut start = self.position as usize - run_local;
 
         if run_local < run.len() {
             return if run_local == 0 { None } else { Some(start) };
@@ -658,7 +662,7 @@ impl Tokenizer<'_> {
                 InlineTokenKind::Delimiter { character: b'_' } => {
                     tokens[index].kind = InlineTokenKind::Removed;
                     start = token.start as usize;
-                    self.text_start = start;
+                    self.text_start = u32_from_usize(start);
                 }
                 InlineTokenKind::Text => {
                     let text = &self.source[token.range()];
@@ -667,10 +671,10 @@ impl Tokenizer<'_> {
 
                     if local == text.len() {
                         tokens[index].kind = InlineTokenKind::Removed;
-                        self.text_start = start;
+                        self.text_start = u32_from_usize(start);
                     } else {
                         tokens[index].end = u32_from_usize(start);
-                        self.text_start = start;
+                        self.text_start = u32_from_usize(start);
 
                         break;
                     }
@@ -690,19 +694,21 @@ impl Tokenizer<'_> {
             }
         }
 
-        if start == self.position { None } else { Some(start) }
+        if start == self.position as usize { None } else { Some(start) }
     }
 
     fn html_inline(&mut self, tokens: &mut [InlineToken]) -> Result<bool> {
-        assert!(self.source[self.position] == b'<');
+        assert!(self.source[self.position as usize] == b'<');
         assert!(self.count as usize <= tokens.len());
 
-        let Some(length) = html_tag_length(self.source, self.position) else {
+        let Some(length) = html_tag_length(self.source, self.position as usize) else {
             return Ok(false);
         };
 
-        let token =
-            InlineToken::new(InlineTokenKind::HTMLInline, self.position..self.position + length);
+        let token = InlineToken::new(
+            InlineTokenKind::HTMLInline,
+            self.position as usize..self.position as usize + length,
+        );
 
         self.token_emit(tokens, token)
     }
@@ -712,10 +718,14 @@ impl Tokenizer<'_> {
         tokens: &mut [InlineToken],
         document: &mut Document,
     ) -> Result<bool> {
-        assert!(matches!(self.source[self.position], b'h' | b'w' | b'f'));
+        assert!(matches!(self.source[self.position as usize], b'h' | b'w' | b'f'));
         assert!(document.node_count() >= 1);
 
-        let before = if self.position == 0 { b' ' } else { self.source[self.position - 1] };
+        let before = if self.position as usize == 0 {
+            b' '
+        } else {
+            self.source[self.position as usize - 1]
+        };
 
         if !(before.is_ascii_whitespace() || matches!(before, b'*' | b'_' | b'~' | b'(')) {
             return Ok(false);
@@ -725,7 +735,7 @@ impl Tokenizer<'_> {
             return Ok(false);
         }
 
-        let rest = &self.source[self.position..];
+        let rest = &self.source[self.position as usize..];
         let www = rest.starts_with(b"www.");
 
         let http = rest.starts_with(b"http://")
@@ -754,7 +764,10 @@ impl Tokenizer<'_> {
 
         let token = InlineToken {
             href,
-            ..InlineToken::new(InlineTokenKind::Autolink, self.position..self.position + length)
+            ..InlineToken::new(
+                InlineTokenKind::Autolink,
+                self.position as usize..self.position as usize + length,
+            )
         };
 
         self.token_emit(tokens, token)
@@ -881,7 +894,7 @@ fn flanking(character: u8, neighbours: Neighbours) -> (bool, bool) {
 fn scheme_length(body: &[u8]) -> Option<usize> {
     let colon = body.iter().position(|&byte| byte == b':')?;
 
-    if !(2..=SCHEME_LENGTH_MAX).contains(&colon) {
+    if !(2..=SCHEME_LENGTH_MAX as usize).contains(&colon) {
         return None;
     }
 
@@ -1052,7 +1065,7 @@ fn inline_destination_parse(
         return Ok(None);
     }
 
-    let raw = &source[destination.inner];
+    let raw = &source[range_from_u32(&destination.inner)];
     let mut href = Span { length: 0, offset: document.text_length() };
 
     text_decode(raw, document, &mut href)?;
@@ -1089,7 +1102,7 @@ fn destination_scan_angle(source: &[u8], start: usize) -> Option<Destination> {
         match byte {
             b'\\' => escaped = true,
             b'>' => {
-                let inner = start + 1..start + 1 + index;
+                let inner = range_from_usize(&(start + 1..start + 1 + index));
 
                 return Some(Destination { after: u32_from_usize(start + 2 + index), inner });
             }
@@ -1158,7 +1171,7 @@ pub(crate) fn destination_scan(source: &[u8], start: usize) -> Option<Destinatio
 
     assert!(end >= start);
 
-    Some(Destination { after: u32_from_usize(end), inner: start..end })
+    Some(Destination { after: u32_from_usize(end), inner: range_from_usize(&(start..end)) })
 }
 
 pub(crate) fn title_scan(source: &[u8], start: usize) -> Option<usize> {
@@ -1693,7 +1706,8 @@ fn entity_decode_html(rest: &[u8]) -> Option<(u32, u32, usize)> {
         return Some((code_point, 0, length));
     }
 
-    let semicolon = rest.iter().take(ENTITY_NAME_LENGTH_MAX + 2).position(|&byte| byte == b';')?;
+    let semicolon =
+        rest.iter().take(ENTITY_NAME_LENGTH_MAX as usize + 2).position(|&byte| byte == b';')?;
     let name = &rest[1..semicolon];
 
     if name.is_empty() {

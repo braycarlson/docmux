@@ -110,7 +110,7 @@ pub fn writers_all(document: &mut Document, workspace: &mut Workspace) {
     let mut scratch = SCRATCH.lock().unwrap_or_else(PoisonError::into_inner);
 
     let markdown_length =
-        conversion_ok("markdown write", markdown::write(document, &mut output[..]));
+        conversion_ok("markdown write", markdown::write(document, &mut output[..])) as usize;
 
     assert!(markdown_length <= output.len());
 
@@ -120,14 +120,14 @@ pub fn writers_all(document: &mut Document, workspace: &mut Workspace) {
     conversion_ok("markdown read", markdown_read);
     conversion_ok("html write", html::write(document, HTMLRaw::Escape, &mut scratch[..]));
 
-    let adf_length = conversion_ok("adf write", adf::write(document, &mut output[..]));
+    let adf_length = conversion_ok("adf write", adf::write(document, &mut output[..])) as usize;
 
     assert!(adf_length <= output.len());
 
     conversion_ok("adf read", adf::read(&output[..adf_length], document));
 
     let docx_length =
-        conversion_ok("docx write", docx::write(document, workspace, &mut scratch[..]));
+        conversion_ok("docx write", docx::write(document, workspace, &mut scratch[..])) as usize;
 
     assert!(docx_length <= scratch.len());
 

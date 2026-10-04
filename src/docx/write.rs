@@ -231,7 +231,7 @@ struct Writer<'a, 'b, 'c, 'd> {
     sink: &'b mut Sink<'a>,
 }
 
-pub fn write(document: &Document, workspace: &mut Workspace, output: &mut [u8]) -> Result<usize> {
+pub fn write(document: &Document, workspace: &mut Workspace, output: &mut [u8]) -> Result<u32> {
     assert!(document.node_count() >= 1);
     assert!(document.node(NODE_ROOT).kind == NodeKind::Document);
 
@@ -1000,7 +1000,7 @@ fn target_write(href: &[u8], sink: &mut Sink<'_>) -> Result<()> {
         }
     }
 
-    assert!(sink.length() >= before + href.len());
+    assert!(sink.length() >= before + u32_from_usize(href.len()));
 
     Ok(())
 }

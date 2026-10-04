@@ -84,14 +84,14 @@ struct Writer<'a, 'b, 'c> {
     open_count: u32,
     open_marks: [OpenMark; OPEN_MARK_COUNT_MAX as usize],
     prefix: [u8; PREFIX_BYTES_MAX],
-    prefix_length: usize,
+    prefix_length: u32,
     segment_count: u32,
     segments: [PrefixSegment; SEGMENT_COUNT_MAX as usize],
     sink: &'b mut Sink<'a>,
     whitespace_pending: u32,
 }
 
-pub fn write(document: &Document, output: &mut [u8]) -> Result<usize> {
+pub fn write(document: &Document, output: &mut [u8]) -> Result<u32> {
     assert!(document.node_count() >= 1);
     assert!(document.node(NODE_ROOT).kind == NodeKind::Document);
 
@@ -337,13 +337,13 @@ impl Writer<'_, '_, '_> {
 
     fn segment_push(&mut self, bytes: &[u8], marker_pending: bool, settled_length: usize) {
         assert!(self.segment_count < SEGMENT_COUNT_MAX);
-        assert!(self.prefix_length + bytes.len() <= PREFIX_BYTES_MAX);
+        assert!(self.prefix_length as usize + bytes.len() <= PREFIX_BYTES_MAX);
         assert!(settled_length <= bytes.len());
 
-        let start = self.prefix_length;
+        let start = self.prefix_length as usize;
 
         self.prefix[start..start + bytes.len()].copy_from_slice(bytes);
-        self.prefix_length += bytes.len();
+        self.prefix_length += u32_from_usize(bytes.len());
 
         self.segments[self.segment_count as usize] = PrefixSegment {
             length: u16_from_usize(bytes.len()),
@@ -354,33 +354,33 @@ impl Writer<'_, '_, '_> {
 
         self.segment_count += 1;
 
-        assert!(self.prefix_length <= PREFIX_BYTES_MAX);
+        assert!(self.prefix_length as usize <= PREFIX_BYTES_MAX);
     }
 
     fn segment_pop(&mut self) {
         assert!(self.segment_count > 0);
 
         self.segment_count -= 1;
-        self.prefix_length = usize::from(self.segments[self.segment_count as usize].start);
+        self.prefix_length = u32::from(self.segments[self.segment_count as usize].start);
 
-        assert!(self.prefix_length <= PREFIX_BYTES_MAX);
+        assert!(self.prefix_length as usize <= PREFIX_BYTES_MAX);
     }
 
     fn line_begin(&mut self) -> Result<()> {
-        assert!(self.prefix_length <= PREFIX_BYTES_MAX);
+        assert!(self.prefix_length as usize <= PREFIX_BYTES_MAX);
         assert!(self.segment_count <= SEGMENT_COUNT_MAX);
 
-        self.sink.write(&self.prefix[..self.prefix_length])?;
+        self.sink.write(&self.prefix[..self.prefix_length as usize])?;
         self.markers_settle();
 
         Ok(())
     }
 
     fn line_blank(&mut self) -> Result<()> {
-        assert!(self.prefix_length <= PREFIX_BYTES_MAX);
+        assert!(self.prefix_length as usize <= PREFIX_BYTES_MAX);
         assert!(self.open_count == 0);
 
-        let end = self.prefix[..self.prefix_length].trim_ascii_end().len();
+        let end = self.prefix[..self.prefix_length as usize].trim_ascii_end().len();
 
         self.sink.write(&self.prefix[..end])?;
         self.sink.write(b"\n")?;
@@ -404,8 +404,8 @@ impl Writer<'_, '_, '_> {
             let settled = usize::from(segment.settled_length);
 
             self.prefix[start..start + settled].fill(b' ');
-            self.prefix.copy_within(start + length..self.prefix_length, start + settled);
-            self.prefix_length -= length - settled;
+            self.prefix.copy_within(start + length..self.prefix_length as usize, start + settled);
+            self.prefix_length -= u32_from_usize(length - settled);
             self.segments[index].length = u16_from_usize(settled);
             self.segments[index].marker_pending = false;
 
@@ -937,7 +937,7 @@ fn code_span_write(code: &[u8], sink: &mut Sink<'_>, in_table: bool) -> Result<(
 
     sink.write_repeat(b'`', fence_length)?;
 
-    assert!(sink.length() >= opened + code.len() + fence_length);
+    assert!(sink.length() >= opened + u32_from_usize(code.len() + fence_length));
 
     Ok(())
 }
@@ -974,7 +974,7 @@ fn text_escape(text: &[u8], sink: &mut Sink<'_>, context: TextContext) -> Result
         }
     }
 
-    assert!(sink.length() >= before + text.len());
+    assert!(sink.length() >= before + u32_from_usize(text.len()));
 
     Ok(())
 }

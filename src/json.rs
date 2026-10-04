@@ -1,4 +1,11 @@
-use crate::bytes::{Sink, decimal_parse_u32, u32_from_usize, utf8_encode};
+use crate::bytes::{
+    Sink,
+    decimal_parse_u32,
+    range_from_u32,
+    range_from_usize,
+    u32_from_usize,
+    utf8_encode,
+};
 use crate::error::{Error, Result};
 use crate::xml::BytePush;
 use core::ops::Range;
@@ -131,18 +138,18 @@ fn container_end(source: &[u8], start: usize) -> Result<usize> {
 
 #[derive(Clone, Debug)]
 pub(crate) struct Object<'a> {
-    pub(crate) range: Range<usize>,
+    pub(crate) range: Range<u32>,
     pub(crate) source: &'a [u8],
 }
 
 impl Object<'_> {
-    pub(crate) fn field(&self, key: &[u8]) -> Result<Option<Range<usize>>> {
-        assert!(self.range.end <= self.source.len());
+    pub(crate) fn field(&self, key: &[u8]) -> Result<Option<Range<u32>>> {
+        assert!(self.range.end as usize <= self.source.len());
         assert!(!key.is_empty());
 
         let source = self.source;
-        let end = self.range.end;
-        let mut position = whitespace_skip(source, self.range.start);
+        let end = self.range.end as usize;
+        let mut position = whitespace_skip(source, self.range.start as usize);
 
         if position >= end {
             return Err(malformed(position));
@@ -195,7 +202,7 @@ impl Object<'_> {
             }
 
             if key_raw == key {
-                return Ok(Some(value_start..value_end));
+                return Ok(Some(range_from_usize(&(value_start..value_end))));
             }
 
             position = value_end;
@@ -208,20 +215,20 @@ impl Object<'_> {
 #[derive(Clone, Debug)]
 pub(crate) struct ArrayItems {
     done: bool,
-    end: usize,
-    position: usize,
+    end: u32,
+    position: u32,
     remaining: u32,
 }
 
 impl ArrayItems {
     pub(crate) const EMPTY: Self = Self { done: true, end: 0, position: 0, remaining: 0 };
 
-    pub(crate) fn new(source: &[u8], array: Range<usize>) -> Result<Self> {
-        assert!(array.end <= source.len());
+    pub(crate) fn new(source: &[u8], array: Range<u32>) -> Result<Self> {
+        assert!(array.end as usize <= source.len());
 
-        let position = whitespace_skip(source, array.start);
+        let position = whitespace_skip(source, array.start as usize);
 
-        if position >= array.end {
+        if position >= array.end as usize {
             return Err(malformed(position));
         }
 
@@ -232,26 +239,27 @@ impl ArrayItems {
         Ok(Self {
             done: false,
             end: array.end,
-            position: position + 1,
+            position: u32_from_usize(position + 1),
             remaining: u32_from_usize(array.len()),
         })
     }
 
-    pub(crate) fn next(&mut self, source: &[u8]) -> Result<Option<Range<usize>>> {
-        assert!(self.end <= source.len());
+    pub(crate) fn next(&mut self, source: &[u8]) -> Result<Option<Range<u32>>> {
+        assert!(self.end as usize <= source.len());
 
         if self.done {
             return Ok(None);
         }
 
         for _ in 0..self.remaining.max(1) {
-            self.position = whitespace_skip(source, self.position);
+            let start = whitespace_skip(source, self.position as usize);
+            self.position = u32_from_usize(start);
 
             if self.position >= self.end {
-                return Err(malformed(self.position));
+                return Err(malformed(start));
             }
 
-            match source[self.position] {
+            match source[start] {
                 b']' => {
                     self.done = true;
 
@@ -259,32 +267,31 @@ impl ArrayItems {
                 }
                 b',' => self.position += 1,
                 _ => {
-                    let start = self.position;
                     let end = value_end(source, start)?;
 
-                    if end > self.end {
+                    if end > self.end as usize {
                         return Err(malformed(start));
                     }
 
-                    self.position = end;
+                    self.position = u32_from_usize(end);
 
                     assert!(end > start);
 
-                    return Ok(Some(start..end));
+                    return Ok(Some(range_from_usize(&(start..end))));
                 }
             }
         }
 
-        Err(malformed(self.position))
+        Err(Error::JSONMalformed { offset: self.position })
     }
 }
 
 pub(crate) fn string_decode<P: BytePush>(
     source: &[u8],
-    range: Range<usize>,
+    range: Range<u32>,
     out: &mut P,
 ) -> Result<()> {
-    assert!(range.end <= source.len());
+    assert!(range.end as usize <= source.len());
 
     let body = string_raw(source, range.clone())?;
     let mut index = 0usize;
@@ -305,7 +312,7 @@ pub(crate) fn string_decode<P: BytePush>(
             continue;
         }
 
-        let offset = range.start + 1 + index;
+        let offset = range.start as usize + 1 + index;
 
         let (code_point, length) =
             escape_decode(&body[index..]).ok_or_else(|| malformed(offset))?;
@@ -394,25 +401,25 @@ fn unicode_escape_decode(rest: &[u8]) -> Option<(u32, usize)> {
     Some((high, 6))
 }
 
-pub(crate) fn string_raw(source: &[u8], range: Range<usize>) -> Result<&[u8]> {
-    assert!(range.end <= source.len());
+pub(crate) fn string_raw(source: &[u8], range: Range<u32>) -> Result<&[u8]> {
+    assert!(range.end as usize <= source.len());
 
-    let raw = &source[range.clone()];
+    let raw = &source[range_from_u32(&range)];
     let quoted = raw.len() >= 2 && raw[0] == b'"' && raw[raw.len() - 1] == b'"';
 
     if !quoted {
-        return Err(malformed(range.start));
+        return Err(Error::JSONMalformed { offset: range.start });
     }
 
     Ok(&raw[1..raw.len() - 1])
 }
 
-pub(crate) fn u32_parse(source: &[u8], range: Range<usize>) -> Result<u32> {
-    assert!(range.end <= source.len());
+pub(crate) fn u32_parse(source: &[u8], range: Range<u32>) -> Result<u32> {
+    assert!(range.end as usize <= source.len());
 
-    let raw = &source[range.clone()];
+    let raw = &source[range_from_u32(&range)];
 
-    decimal_parse_u32(raw).ok_or_else(|| malformed(range.start))
+    decimal_parse_u32(raw).ok_or(Error::JSONMalformed { offset: range.start })
 }
 
 pub(crate) fn string_write(sink: &mut Sink<'_>, bytes: &[u8]) -> Result<()> {
@@ -453,13 +460,13 @@ mod tests {
         u32_parse,
         value_end,
     };
-    use crate::bytes::Sink;
+    use crate::bytes::{Sink, range_from_u32, u32_from_usize};
     use crate::error::Error;
 
     #[test]
     fn finds_fields_in_any_order() {
         let source = br#"{"content":[{"a":1},{"b":[1,2]}],"type":"doc","n":42,"ok":true}"#;
-        let object = 0..source.len();
+        let object = 0..u32_from_usize(source.len());
         let kind = Object { range: object.clone(), source }.field(b"type").unwrap().unwrap();
 
         assert_eq!(string_raw(source, kind).unwrap(), b"doc");
@@ -473,12 +480,12 @@ mod tests {
         let mut items = ArrayItems::new(source, content).unwrap();
         let first = items.next(source).unwrap().unwrap();
 
-        assert_eq!(&source[first], b"{\"a\":1}");
+        assert_eq!(&source[range_from_u32(&first)], b"{\"a\":1}");
 
         let second = items.next(source).unwrap().unwrap();
         let third = items.next(source).unwrap();
 
-        assert_eq!(&source[second], b"{\"b\":[1,2]}");
+        assert_eq!(&source[range_from_u32(&second)], b"{\"b\":[1,2]}");
         assert_eq!(third, None);
     }
 
@@ -488,7 +495,7 @@ mod tests {
         let mut decoded = [0u8; 32];
         let mut decoded_sink = Sink::new(&mut decoded);
 
-        string_decode(source, 0..source.len(), &mut decoded_sink).unwrap();
+        string_decode(source, 0..u32_from_usize(source.len()), &mut decoded_sink).unwrap();
         assert_eq!(decoded_sink.written(), "a\"b\\c\n\u{e9}\u{1f600}\u{1f600}\u{fffd}".as_bytes());
 
         let mut encoded = [0u8; 32];

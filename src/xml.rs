@@ -4,7 +4,7 @@ use crate::error::{Error, Result};
 use crate::workspace::PART_BYTES_MAX;
 
 const ELEMENT_DEPTH_MAX: u32 = 1024;
-const ENTITY_LENGTH_MAX: usize = 10;
+const ENTITY_LENGTH_MAX: u32 = 10;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum XMLEvent<'a> {
@@ -17,7 +17,7 @@ pub(crate) enum XMLEvent<'a> {
 
 #[derive(Debug)]
 pub(crate) struct XMLReader<'a> {
-    position: usize,
+    position: u32,
     source: &'a [u8],
 }
 
@@ -29,14 +29,14 @@ impl<'a> XMLReader<'a> {
     }
 
     pub(crate) fn next(&mut self) -> Result<XMLEvent<'a>> {
-        assert!(self.position <= self.source.len());
+        assert!(self.position as usize <= self.source.len());
 
         for _ in 0..self.source.len() {
-            if self.position >= self.source.len() {
+            let rest = self.rest();
+
+            if rest.is_empty() {
                 return Ok(XMLEvent::Finished);
             }
-
-            let rest = &self.source[self.position..];
 
             if rest[0] != b'<' {
                 return Ok(self.text_read());
@@ -74,14 +74,14 @@ impl<'a> XMLReader<'a> {
         Err(self.malformed())
     }
 
-    pub(crate) fn position(&self) -> usize {
-        assert!(self.position <= self.source.len());
+    pub(crate) fn position(&self) -> u32 {
+        assert!(self.position as usize <= self.source.len());
 
         self.position
     }
 
     pub(crate) fn skip_element(&mut self) -> Result<()> {
-        assert!(self.position <= self.source.len());
+        assert!(self.position as usize <= self.source.len());
 
         let mut depth: u32 = 1;
 
@@ -112,25 +112,25 @@ impl<'a> XMLReader<'a> {
     }
 
     fn cdata_read(&mut self) -> Result<XMLEvent<'a>> {
-        assert!(self.source[self.position..].starts_with(b"<![CDATA["));
+        assert!(self.rest().starts_with(b"<![CDATA["));
 
-        let start = self.position + b"<![CDATA[".len();
+        let start = self.position as usize + b"<![CDATA[".len();
         let rest = &self.source[start..];
         let length = find(rest, b"]]>").ok_or_else(|| self.malformed())?;
 
         assert!(length + b"]]>".len() <= rest.len());
 
-        self.position = start + length + b"]]>".len();
+        self.position = u32_from_usize(start + length + b"]]>".len());
 
-        assert!(self.position <= self.source.len());
+        assert!(self.position as usize <= self.source.len());
 
         Ok(XMLEvent::Text { cdata: true, raw: &rest[..length] })
     }
 
     fn end_tag_read(&mut self) -> Result<XMLEvent<'a>> {
-        assert!(self.source[self.position..].starts_with(b"</"));
+        assert!(self.rest().starts_with(b"</"));
 
-        let start = self.position + 2;
+        let start = self.position as usize + 2;
         let rest = &self.source[start..];
         let length = find(rest, b">").ok_or_else(|| self.malformed())?;
         let name = rest[..length].trim_ascii();
@@ -139,33 +139,39 @@ impl<'a> XMLReader<'a> {
             return Err(self.malformed());
         }
 
-        self.position = start + length + 1;
+        self.position = u32_from_usize(start + length + 1);
 
-        assert!(self.position <= self.source.len());
+        assert!(self.position as usize <= self.source.len());
 
         Ok(XMLEvent::End { name })
     }
 
-    fn malformed(&self) -> Error {
-        Error::XMLMalformed { offset: u32_from_usize(self.position) }
+    const fn malformed(&self) -> Error {
+        Error::XMLMalformed { offset: self.position }
+    }
+
+    fn rest(&self) -> &'a [u8] {
+        assert!(self.position as usize <= self.source.len());
+
+        &self.source[self.position as usize..]
     }
 
     fn skip_until<const N: usize>(&mut self, terminator: &[u8; N]) -> Result<()> {
-        assert!(self.position <= self.source.len());
+        assert!(self.position as usize <= self.source.len());
 
-        let rest = &self.source[self.position..];
+        let rest = self.rest();
         let length = find(rest, terminator).ok_or_else(|| self.malformed())?;
-        self.position += length + terminator.len();
+        self.position += u32_from_usize(length + terminator.len());
 
-        assert!(self.position <= self.source.len());
+        assert!(self.position as usize <= self.source.len());
 
         Ok(())
     }
 
     fn start_tag_read(&mut self) -> Result<XMLEvent<'a>> {
-        assert!(self.source[self.position..].starts_with(b"<"));
+        assert!(self.rest().starts_with(b"<"));
 
-        let start = self.position + 1;
+        let start = self.position as usize + 1;
         let rest = &self.source[start..];
 
         let name_length = rest
@@ -186,9 +192,9 @@ impl<'a> XMLReader<'a> {
         let empty = close > 0 && tail[close - 1] == b'/';
         let attributes_end = if empty { close - 1 } else { close };
         let attributes = tail[..attributes_end].trim_ascii();
-        self.position = start + name_length + close + 1;
+        self.position = u32_from_usize(start + name_length + close + 1);
 
-        assert!(self.position <= self.source.len());
+        assert!(self.position as usize <= self.source.len());
 
         if empty {
             Ok(XMLEvent::Empty { attributes, name })
@@ -198,11 +204,11 @@ impl<'a> XMLReader<'a> {
     }
 
     fn text_read(&mut self) -> XMLEvent<'a> {
-        assert!(self.position < self.source.len());
+        assert!((self.position as usize) < self.source.len());
 
-        let rest = &self.source[self.position..];
+        let rest = self.rest();
         let length = rest.iter().position(|&byte| byte == b'<').unwrap_or(rest.len());
-        self.position += length;
+        self.position += u32_from_usize(length);
 
         assert!(length >= 1);
 
@@ -246,7 +252,7 @@ pub(crate) fn find<const N: usize>(haystack: &[u8], needle: &[u8; N]) -> Option<
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Attributes<'a> {
-    position: usize,
+    position: u32,
     raw: &'a [u8],
 }
 
@@ -275,9 +281,9 @@ impl<'a> Attributes<'a> {
     }
 
     pub(crate) fn next(&mut self) -> Option<(&'a [u8], &'a [u8])> {
-        assert!(self.position <= self.raw.len());
+        assert!(self.position as usize <= self.raw.len());
 
-        let rest = &self.raw[self.position..];
+        let rest = &self.raw[self.position as usize..];
         let skipped = rest.iter().position(|byte| !byte.is_ascii_whitespace())?;
         let after_space = &rest[skipped..];
 
@@ -299,9 +305,9 @@ impl<'a> Attributes<'a> {
         let value_length = after_equals[value_start..].iter().position(|&byte| byte == quote)?;
         let value = &after_equals[value_start..value_start + value_length];
         let consumed = skipped + name_length + equals + 1 + value_start + value_length + 1;
-        self.position += consumed;
+        self.position += u32_from_usize(consumed);
 
-        assert!(self.position <= self.raw.len());
+        assert!(self.position as usize <= self.raw.len());
         assert!(!name.is_empty());
 
         Some((name, value))
@@ -369,14 +375,14 @@ pub(crate) fn entity_decode(rest: &[u8]) -> Option<(u32, usize)> {
     assert!(!rest.is_empty());
     assert!(rest[0] == b'&');
 
-    let limit = rest.len().min(ENTITY_LENGTH_MAX + 2);
+    let limit = rest.len().min(ENTITY_LENGTH_MAX as usize + 2);
     let semicolon = rest[..limit].iter().position(|&byte| byte == b';')?;
 
     assert!(semicolon >= 1);
 
     let body = &rest[1..semicolon];
 
-    assert!(body.len() <= ENTITY_LENGTH_MAX);
+    assert!(body.len() <= ENTITY_LENGTH_MAX as usize);
 
     let length = semicolon + 1;
 

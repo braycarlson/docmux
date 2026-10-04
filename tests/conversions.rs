@@ -53,7 +53,8 @@ fn markdown_write_string() -> String {
     let mut output = OUTPUT.lock().unwrap_or_else(PoisonError::into_inner);
 
     let length =
-        guarded(|| conversion_ok("markdown write", markdown::write(&document, &mut output[..])));
+        guarded(|| conversion_ok("markdown write", markdown::write(&document, &mut output[..])))
+            as usize;
 
     assert!(length <= output.len());
 
@@ -86,7 +87,8 @@ fn markdown_to_docx_and_back() {
         let mut document = DOCUMENT.lock().unwrap_or_else(PoisonError::into_inner);
         let mut workspace = WORKSPACE.lock().unwrap_or_else(PoisonError::into_inner);
         let mut output = OUTPUT.lock().unwrap_or_else(PoisonError::into_inner);
-        let length = guarded(|| docx::write(&document, &mut workspace, &mut output[..]).unwrap());
+        let length =
+            guarded(|| docx::write(&document, &mut workspace, &mut output[..]).unwrap()) as usize;
 
         guarded(|| docx::read(&output[..length], &mut workspace, &mut document).unwrap());
 
@@ -138,7 +140,7 @@ fn markdown_to_adf_and_back() {
     {
         let mut document = DOCUMENT.lock().unwrap_or_else(PoisonError::into_inner);
         let mut output = OUTPUT.lock().unwrap_or_else(PoisonError::into_inner);
-        let length = guarded(|| adf::write(&document, &mut output[..]).unwrap());
+        let length = guarded(|| adf::write(&document, &mut output[..]).unwrap()) as usize;
 
         guarded(|| adf::read(&output[..length], &mut document).unwrap());
 
@@ -179,15 +181,16 @@ fn libreoffice_docx_survives_adf_and_docx_rewrites() {
 
     guarded(|| docx::read(&archive, &mut workspace, &mut document).unwrap());
 
-    let adf_length = guarded(|| adf::write(&document, &mut output[..]).unwrap());
+    let adf_length = guarded(|| adf::write(&document, &mut output[..]).unwrap()) as usize;
 
     guarded(|| adf::read(&output[..adf_length], &mut document).unwrap());
 
-    let docx_length = guarded(|| docx::write(&document, &mut workspace, &mut scratch[..]).unwrap());
+    let docx_length =
+        guarded(|| docx::write(&document, &mut workspace, &mut scratch[..]).unwrap()) as usize;
 
     guarded(|| docx::read(&scratch[..docx_length], &mut workspace, &mut document).unwrap());
 
-    let length = guarded(|| markdown::write(&document, &mut output[..]).unwrap());
+    let length = guarded(|| markdown::write(&document, &mut output[..]).unwrap()) as usize;
     let text = String::from_utf8(output[..length].to_vec()).unwrap();
     let expected = LIBREOFFICE_EXPECTED.replace("| :-: | :-: |", "| --- | --- |");
 
@@ -280,7 +283,7 @@ fn corrupted_inputs_error_instead_of_panicking() {
     let sample = fixture("sample.md");
 
     markdown::read(&sample, markdown::Options::GFM, &mut workspace, &mut document).unwrap();
-    let adf_length = adf::write(&document, &mut output[..]).unwrap();
+    let adf_length = adf::write(&document, &mut output[..]).unwrap() as usize;
     let adf_text = output[..adf_length].to_vec();
     let mut state: u32 = 0x9e37_79b9;
 
@@ -305,7 +308,7 @@ fn corrupted_inputs_error_instead_of_panicking() {
         let options = markdown::Options::GFM;
 
         if markdown::read(&markdown_mutated, options, &mut workspace, &mut document).is_ok() {
-            let length = markdown::write(&document, &mut output[..]).unwrap();
+            let length = markdown::write(&document, &mut output[..]).unwrap() as usize;
 
             markdown::read(&output[..length], options, &mut workspace, &mut document).unwrap();
             adf::write(&document, &mut output[..]).unwrap();

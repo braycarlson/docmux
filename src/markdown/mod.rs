@@ -94,7 +94,7 @@ mod tests {
             read(source.as_bytes(), Options::GFM, workspace, document).unwrap();
 
             let mut output = vec![0u8; 1 << 16];
-            let length = write(document, &mut output).unwrap();
+            let length = write(document, &mut output).unwrap() as usize;
 
             String::from_utf8(output[..length].to_vec()).unwrap()
         })

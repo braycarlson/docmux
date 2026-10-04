@@ -106,7 +106,8 @@ fn docx_property_children_follow_schema_order() {
             continue;
         }
 
-        let length = guarded(|| docx::write(&document, &mut workspace, &mut output[..])).unwrap();
+        let length =
+            guarded(|| docx::write(&document, &mut workspace, &mut output[..])).unwrap() as usize;
 
         assert!(length <= output.len());
 

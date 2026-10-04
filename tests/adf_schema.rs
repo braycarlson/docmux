@@ -111,7 +111,7 @@ fn adf_output_matches_atlassian_schema() {
             continue;
         }
 
-        let length = guarded(|| adf::write(&document, &mut output[..])).unwrap();
+        let length = guarded(|| adf::write(&document, &mut output[..])).unwrap() as usize;
 
         assert!(length <= output.len());
 

@@ -1,4 +1,4 @@
-use crate::bytes::{decimal_parse_u32, u8_from_usize, u32_from_usize};
+use crate::bytes::{decimal_parse_u32, range_from_u32, u8_from_usize, u32_from_usize};
 use crate::document::{
     Alignment,
     DEPTH_MAX,
@@ -27,7 +27,7 @@ pub(crate) const COLUMN_COUNT_MAX: u32 = 64;
 const CODE_INDENT: u32 = 4;
 const _: () = assert!(COLUMN_COUNT_MAX >= 1);
 const HTML_BLOCK_KIND_BLANK_TERMINATED_FIRST: u8 = 6;
-const LIST_START_DIGIT_COUNT_MAX: usize = 9;
+const LIST_START_DIGIT_COUNT_MAX: u32 = 9;
 const TAB_STOP: u32 = 4;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -128,7 +128,7 @@ struct ListMarker {
     bullet: u8,
     content_indent: u32,
     indent: u32,
-    marker_length: usize,
+    marker_length: u32,
     ordered: bool,
     start: u32,
 }
@@ -136,7 +136,7 @@ struct ListMarker {
 #[derive(Clone, Copy, Debug)]
 struct Fence {
     character: u8,
-    length: usize,
+    length: u32,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -148,8 +148,8 @@ struct DefinitionBytes<'a> {
 #[derive(Clone, Debug)]
 struct Definition {
     consumed: u32,
-    destination: Range<usize>,
-    label: Range<usize>,
+    destination: Range<u32>,
+    label: Range<u32>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -157,7 +157,7 @@ struct Cursor<'a> {
     column: u32,
     line: &'a [u8],
     partial: u32,
-    position: usize,
+    position: u32,
 }
 
 impl<'a> Cursor<'a> {
@@ -174,10 +174,10 @@ impl<'a> Cursor<'a> {
     }
 
     fn indent(&self) -> u32 {
-        assert!(self.position <= self.line.len());
+        assert!(self.position as usize <= self.line.len());
 
         let mut column = self.column + self.tab_remaining();
-        let start = self.position + usize::from(self.partial > 0);
+        let start = self.position as usize + usize::from(self.partial > 0);
 
         for &byte in &self.line[start.min(self.line.len())..] {
             match byte {
@@ -195,7 +195,7 @@ impl<'a> Cursor<'a> {
     }
 
     fn indent_consume(&mut self, columns: u32) {
-        assert!(self.position <= self.line.len());
+        assert!(self.position as usize <= self.line.len());
 
         let target = self.column + columns;
 
@@ -204,11 +204,11 @@ impl<'a> Cursor<'a> {
                 break;
             }
 
-            if self.position >= self.line.len() {
+            if self.position as usize >= self.line.len() {
                 break;
             }
 
-            match self.line[self.position] {
+            match self.line[self.position as usize] {
                 b' ' => {
                     self.column += 1;
                     self.position += 1;
@@ -234,24 +234,24 @@ impl<'a> Cursor<'a> {
 
     fn advance(&mut self, bytes: usize) {
         assert!(self.partial == 0);
-        assert!(self.position + bytes <= self.line.len());
+        assert!(self.position as usize + bytes <= self.line.len());
 
-        self.position += bytes;
+        self.position += u32_from_usize(bytes);
         self.column += u32_from_usize(bytes);
 
-        assert!(self.position <= self.line.len());
+        assert!(self.position as usize <= self.line.len());
     }
 
     fn is_blank(&self) -> bool {
-        assert!(self.position <= self.line.len());
+        assert!(self.position as usize <= self.line.len());
 
         self.rest().iter().all(|&byte| byte == b' ' || byte == b'\t')
     }
 
     fn rest(&self) -> &'a [u8] {
-        assert!(self.position <= self.line.len());
+        assert!(self.position as usize <= self.line.len());
 
-        &self.line[(self.position + usize::from(self.partial > 0)).min(self.line.len())..]
+        &self.line[(self.position as usize + usize::from(self.partial > 0)).min(self.line.len())..]
     }
 
     fn rest_after_indent(&self) -> &'a [u8] {
@@ -273,14 +273,14 @@ pub(crate) struct BlockParser {
     containers: [Container; DEPTH_MAX as usize],
     fence_character: u8,
     fence_indent: u32,
-    fence_length: usize,
+    fence_length: u32,
     html_kind: u8,
     leaf: Leaf,
     leaf_node: u32,
     options: Options,
-    paragraph_length: usize,
+    paragraph_length: u32,
     paragraph_line_count: u32,
-    paragraph_start: usize,
+    paragraph_start: u32,
 }
 
 impl BlockParser {
@@ -605,7 +605,7 @@ impl BlockParser {
         marker: ListMarker,
         document: &mut Document,
     ) -> Result<()> {
-        assert!(marker.content_indent >= marker.indent + u32_from_usize(marker.marker_length));
+        assert!(marker.content_indent >= marker.indent + marker.marker_length);
         assert!(document.node_count() >= 1);
 
         let list_kind = ContainerKind::List { bullet: marker.bullet, ordered: marker.ordered };
@@ -632,11 +632,9 @@ impl BlockParser {
         }
 
         cursor.indent_consume(marker.indent);
-        cursor.advance(marker.marker_length);
+        cursor.advance(marker.marker_length as usize);
 
-        cursor.indent_consume(
-            marker.content_indent - marker.indent - u32_from_usize(marker.marker_length),
-        );
+        cursor.indent_consume(marker.content_indent - marker.indent - marker.marker_length);
 
         let item_kind = ContainerKind::ListItem {
             blank_pending: false,
@@ -891,7 +889,7 @@ impl BlockParser {
         self.block_open_in_item(document);
         self.leaf_node = document.node_append(self.parent_current(), NodeKind::Paragraph)?;
         self.leaf = Leaf::Paragraph;
-        self.paragraph_start = workspace.part_length as usize;
+        self.paragraph_start = workspace.part_length;
         self.paragraph_length = 0;
         self.paragraph_line_count = 0;
 
@@ -900,10 +898,10 @@ impl BlockParser {
 
     fn paragraph_append(&mut self, rest: &[u8], workspace: &mut Workspace) -> Result<()> {
         assert!(self.leaf == Leaf::Paragraph);
-        assert!(self.paragraph_start <= workspace.part.len());
+        assert!(self.paragraph_start as usize <= workspace.part.len());
 
         let separator_length = usize::from(self.paragraph_line_count > 0);
-        let start = self.paragraph_start + self.paragraph_length;
+        let start = (self.paragraph_start + self.paragraph_length) as usize;
         let end = start + separator_length + rest.len();
 
         if end > workspace.part.len() {
@@ -915,7 +913,7 @@ impl BlockParser {
         }
 
         workspace.part[start + separator_length..end].copy_from_slice(rest);
-        self.paragraph_length = end - self.paragraph_start;
+        self.paragraph_length = u32_from_usize(end) - self.paragraph_start;
         self.paragraph_line_count += 1;
 
         assert!(self.paragraph_line_count >= 1);
@@ -927,10 +925,10 @@ impl BlockParser {
         assert!(self.leaf == Leaf::Paragraph);
         assert!(self.leaf_node < document.node_count());
 
-        let start = self.paragraph_start;
+        let start = self.paragraph_start as usize;
 
         let trimmed_length =
-            workspace.part[start..start + self.paragraph_length].trim_ascii_end().len();
+            workspace.part[start..start + self.paragraph_length as usize].trim_ascii_end().len();
 
         let offset = definitions_take(workspace, document, start..start + trimmed_length)?;
         let remaining = workspace.part[start + offset..start + trimmed_length].trim_ascii_start();
@@ -1008,10 +1006,10 @@ impl BlockParser {
         document: &mut Document,
     ) -> Result<()> {
         assert!(fence.length >= 3);
-        assert!(fence.length <= rest.len());
+        assert!(fence.length as usize <= rest.len());
         assert!(indent < CODE_INDENT);
 
-        let fence_text = rest[fence.length..].trim_ascii();
+        let fence_text = rest[fence.length as usize..].trim_ascii();
 
         let language_raw =
             fence_text.split(|&byte| byte.is_ascii_whitespace()).next().unwrap_or(b"");
@@ -1049,7 +1047,7 @@ impl BlockParser {
             let rest = cursor.rest_after_indent();
             let run = rest.iter().take_while(|&&byte| byte == self.fence_character).count();
 
-            if run >= self.fence_length {
+            if run >= self.fence_length as usize {
                 let tail_blank = rest[run..].iter().all(|&byte| byte == b' ' || byte == b'\t');
 
                 if tail_blank {
@@ -1166,7 +1164,8 @@ impl BlockParser {
             return Ok(false);
         };
 
-        let header = self.paragraph_start..self.paragraph_start + self.paragraph_length;
+        let header_start = self.paragraph_start as usize;
+        let header = header_start..header_start + self.paragraph_length as usize;
 
         if row_cell_count(&workspace.part[header.clone()]) != column_count {
             return Ok(false);
@@ -1348,10 +1347,10 @@ fn definitions_take(
         let mut normalized = [0u8; inline::LABEL_LENGTH_MAX];
 
         if let Some(label_length) =
-            inline::label_normalize(&text[definition.label], &mut normalized)
+            inline::label_normalize(&text[range_from_u32(&definition.label)], &mut normalized)
         {
             let bytes = DefinitionBytes {
-                destination: &text[definition.destination],
+                destination: &text[range_from_u32(&definition.destination)],
                 label: &normalized[..label_length],
             };
 
@@ -1513,7 +1512,7 @@ fn definition_parse(text: &[u8]) -> Option<Definition> {
     Some(Definition {
         consumed: u32_from_usize(consumed),
         destination: destination.inner,
-        label: 1..label_close,
+        label: 1..u32_from_usize(label_close),
     })
 }
 
@@ -1678,7 +1677,7 @@ fn fence_open_parse(rest: &[u8]) -> Option<Fence> {
         }
     }
 
-    Some(Fence { character, length })
+    Some(Fence { character, length: u32_from_usize(length) })
 }
 
 fn setext_level(rest: &[u8]) -> Option<u8> {
@@ -1743,7 +1742,7 @@ fn list_marker_parse(cursor: &Cursor<'_>, interrupts_paragraph: bool) -> Option<
         byte if byte.is_ascii_digit() => {
             let digits = rest.iter().take_while(|&&digit| digit.is_ascii_digit()).count();
 
-            if digits > LIST_START_DIGIT_COUNT_MAX {
+            if digits > LIST_START_DIGIT_COUNT_MAX as usize {
                 return None;
             }
 
@@ -1785,7 +1784,14 @@ fn list_marker_parse(cursor: &Cursor<'_>, interrupts_paragraph: bool) -> Option<
     assert!(marker_length >= 1);
     assert!(content_indent > indent);
 
-    Some(ListMarker { bullet, content_indent, indent, marker_length, ordered, start })
+    Some(ListMarker {
+        bullet,
+        content_indent,
+        indent,
+        marker_length: u32_from_usize(marker_length),
+        ordered,
+        start,
+    })
 }
 
 fn task_marker_parse(rest: &[u8]) -> TaskState {
@@ -1819,8 +1825,8 @@ fn task_marker_parse(rest: &[u8]) -> TaskState {
 #[derive(Clone, Copy, Debug)]
 struct RowCells<'a> {
     done: bool,
-    end: usize,
-    position: usize,
+    end: u32,
+    position: u32,
     row: &'a [u8],
 }
 
@@ -1839,7 +1845,12 @@ impl<'a> RowCells<'a> {
         assert!(start <= end);
         assert!(end <= row.len());
 
-        Self { done: trimmed.is_empty(), end, position: start, row }
+        Self {
+            done: trimmed.is_empty(),
+            end: u32_from_usize(end),
+            position: u32_from_usize(start),
+            row,
+        }
     }
 
     fn next(&mut self) -> Option<Range<usize>> {
@@ -1849,7 +1860,7 @@ impl<'a> RowCells<'a> {
             return None;
         }
 
-        let rest = &self.row[self.position..self.end];
+        let rest = &self.row[self.position as usize..self.end as usize];
         let mut escaped = false;
         let mut length = rest.len();
 
@@ -1868,16 +1879,16 @@ impl<'a> RowCells<'a> {
         let cell = &rest[..length];
         let leading = cell.len() - cell.trim_ascii_start().len();
         let trimmed_length = cell.trim_ascii().len();
-        let cell_start = self.position + leading;
+        let cell_start = self.position as usize + leading;
         let range = cell_start..cell_start + trimmed_length;
 
         if length == rest.len() {
             self.done = true;
         } else {
-            self.position += length + 1;
+            self.position += u32_from_usize(length + 1);
         }
 
-        assert!(range.end <= self.end);
+        assert!(range.end <= self.end as usize);
 
         Some(range)
     }

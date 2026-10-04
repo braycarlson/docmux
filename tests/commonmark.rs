@@ -7,7 +7,7 @@ use std::fs;
 use std::str;
 use std::sync::PoisonError;
 
-const EXAMPLE_COUNT_MIN: usize = 600;
+const EXAMPLE_COUNT_MIN: u32 = 600;
 const FENCE: &str = "````````````````````````````````";
 
 #[derive(Debug)]
@@ -318,12 +318,12 @@ fn convert(source: &str, options: Options, raw: HTMLRaw) -> Option<(String, Stri
     let mut scratch = SCRATCH.lock().unwrap_or_else(PoisonError::into_inner);
 
     guarded(|| markdown::read(source.as_bytes(), options, &mut workspace, &mut document)).ok()?;
-    let html_length = guarded(|| html::write(&document, raw, &mut output[..])).ok()?;
+    let html_length = guarded(|| html::write(&document, raw, &mut output[..])).ok()? as usize;
 
     assert!(html_length <= output.len());
 
     let html_text = utf8_string(&output[..html_length]);
-    let markdown_length = guarded(|| markdown::write(&document, &mut scratch[..])).ok()?;
+    let markdown_length = guarded(|| markdown::write(&document, &mut scratch[..])).ok()? as usize;
 
     assert!(markdown_length <= scratch.len());
 
@@ -332,7 +332,7 @@ fn convert(source: &str, options: Options, raw: HTMLRaw) -> Option<(String, Stri
     guarded(|| markdown::read(&scratch[..markdown_length], options, &mut workspace, &mut document))
         .ok()?;
 
-    let again_length = guarded(|| markdown::write(&document, &mut output[..])).ok()?;
+    let again_length = guarded(|| markdown::write(&document, &mut output[..])).ok()? as usize;
 
     assert!(again_length <= output.len());
 
@@ -424,7 +424,11 @@ fn suite_run(suite: Suite) {
     let known = known_failures_read(&failures_path);
     let examples = examples_parse(&specification);
 
-    assert!(examples.len() > EXAMPLE_COUNT_MIN, "specification parsed {} examples", examples.len());
+    assert!(
+        examples.len() > EXAMPLE_COUNT_MIN as usize,
+        "specification parsed {} examples",
+        examples.len()
+    );
 
     let mut details: BTreeMap<u32, String> = BTreeMap::new();
     let failing = examples_run(&examples, suite, &mut details);

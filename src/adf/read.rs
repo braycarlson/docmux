@@ -1,4 +1,10 @@
-use crate::bytes::{DECIMAL_DIGIT_COUNT_MAX, decimal_format_u32, u32_from_usize, utf8_validate};
+use crate::bytes::{
+    DECIMAL_DIGIT_COUNT_MAX,
+    decimal_format_u32,
+    range_from_u32,
+    u32_from_usize,
+    utf8_validate,
+};
 use crate::document::{
     Alignment,
     DEPTH_MAX,
@@ -20,7 +26,7 @@ use core::ops::Range;
 
 pub const INPUT_BYTES_MAX: u32 = 64 << 20;
 const DATE_BYTES: usize = 10;
-const FRAME_COUNT_MAX: usize = DEPTH_MAX as usize * 2 + 2;
+const FRAME_COUNT_MAX: u32 = DEPTH_MAX as u32 * 2 + 2;
 const MILLISECONDS_PER_DAY: u64 = 86_400_000;
 const TIMESTAMP_DIGIT_COUNT_MAX: u32 = 20;
 const YEAR_MAX: u64 = 9999;
@@ -39,7 +45,7 @@ impl Frame {
 #[derive(Debug)]
 struct Reader<'a> {
     frame_count: u32,
-    frames: [Frame; FRAME_COUNT_MAX],
+    frames: [Frame; FRAME_COUNT_MAX as usize],
     source: &'a [u8],
 }
 
@@ -53,7 +59,7 @@ pub fn read(source: &[u8], document: &mut Document) -> Result<()> {
 
     assert!(document.node_count() == 1);
 
-    let root = 0..source.len();
+    let root = 0..u32_from_usize(source.len());
 
     let kind = Object { range: root.clone(), source }
         .field(b"type")?
@@ -63,7 +69,8 @@ pub fn read(source: &[u8], document: &mut Document) -> Result<()> {
         return Err(Error::ADFMalformed { offset: 0 });
     }
 
-    let mut reader = Reader { frame_count: 0, frames: [Frame::EMPTY; FRAME_COUNT_MAX], source };
+    let mut reader =
+        Reader { frame_count: 0, frames: [Frame::EMPTY; FRAME_COUNT_MAX as usize], source };
 
     if let Some(content) = (Object { range: root, source }).field(b"content")? {
         reader.frame_push(content, NODE_ROOT, false)?;
@@ -94,12 +101,12 @@ pub fn read(source: &[u8], document: &mut Document) -> Result<()> {
 }
 
 impl Reader<'_> {
-    fn frame_push(&mut self, content: Range<usize>, node: u32, code: bool) -> Result<()> {
-        assert!(content.end <= self.source.len());
+    fn frame_push(&mut self, content: Range<u32>, node: u32, code: bool) -> Result<()> {
+        assert!(content.end as usize <= self.source.len());
         assert!(node < NODE_COUNT_MAX);
-        assert!(self.frame_count as usize <= FRAME_COUNT_MAX);
+        assert!(self.frame_count <= FRAME_COUNT_MAX);
 
-        if self.frame_count as usize >= FRAME_COUNT_MAX {
+        if self.frame_count >= FRAME_COUNT_MAX {
             return Err(Error::DepthExceeded { depth_max: DEPTH_MAX });
         }
 
@@ -140,52 +147,52 @@ impl Reader<'_> {
         }
     }
 
-    fn malformed(&self, item: &Range<usize>) -> Error {
-        assert!(item.start <= self.source.len());
+    fn malformed(&self, item: &Range<u32>) -> Error {
+        assert!(item.start as usize <= self.source.len());
 
-        Error::ADFMalformed { offset: u32_from_usize(item.start) }
+        Error::ADFMalformed { offset: item.start }
     }
 
-    fn field(&self, object: &Range<usize>, key: &[u8]) -> Result<Option<Range<usize>>> {
-        assert!(object.end <= self.source.len());
+    fn field(&self, object: &Range<u32>, key: &[u8]) -> Result<Option<Range<u32>>> {
+        assert!(object.end as usize <= self.source.len());
 
         Object { range: object.clone(), source: self.source }.field(key)
     }
 
-    fn attribute(&self, item: &Range<usize>, key: &[u8]) -> Result<Option<Range<usize>>> {
+    fn attribute(&self, item: &Range<u32>, key: &[u8]) -> Result<Option<Range<u32>>> {
         assert!(!key.is_empty());
 
         self.field(item, b"attrs")?.map_or(Ok(None), |attributes| self.field(&attributes, key))
     }
 
-    fn attribute_u32(&self, item: &Range<usize>, key: &[u8], default: u32) -> Result<u32> {
+    fn attribute_u32(&self, item: &Range<u32>, key: &[u8], default: u32) -> Result<u32> {
         assert!(!key.is_empty());
 
         self.attribute(item, key)?
             .map_or(Ok(default), |range| u32_parse(self.source, self.unquoted(range)))
     }
 
-    fn unquoted(&self, range: Range<usize>) -> Range<usize> {
-        assert!(range.end <= self.source.len());
+    fn unquoted(&self, range: Range<u32>) -> Range<u32> {
+        assert!(range.end as usize <= self.source.len());
 
-        let quoted = self.source[range.clone()].first() == Some(&b'"');
+        let quoted = self.source[range_from_u32(&range)].first() == Some(&b'"');
         let inner = if quoted { range.start + 1..range.end - 1 } else { range };
 
-        assert!(inner.end <= self.source.len());
+        assert!(inner.end as usize <= self.source.len());
 
         inner
     }
 
     fn attribute_text(
         &self,
-        item: &Range<usize>,
+        item: &Range<u32>,
         key: &[u8],
         document: &mut Document,
     ) -> Result<Span> {
         assert!(!key.is_empty());
 
         match self.attribute(item, key)? {
-            Some(range) if self.source[range.clone()].first() == Some(&b'"') => {
+            Some(range) if self.source[range_from_u32(&range)].first() == Some(&b'"') => {
                 let mut span = Span { length: 0, offset: document.text_length() };
 
                 string_decode_into(self.source, range, document, &mut span)?;
@@ -198,12 +205,12 @@ impl Reader<'_> {
 
     fn item(
         &mut self,
-        item: Range<usize>,
+        item: Range<u32>,
         parent: u32,
         code: bool,
         document: &mut Document,
     ) -> Result<()> {
-        assert!(item.end <= self.source.len());
+        assert!(item.end as usize <= self.source.len());
         assert!(parent < document.node_count());
 
         let kind_range = self.field(&item, b"type")?.ok_or_else(|| self.malformed(&item))?;
@@ -262,14 +269,14 @@ impl Reader<'_> {
 
     fn list(
         &mut self,
-        item: Range<usize>,
-        content: Option<Range<usize>>,
+        item: Range<u32>,
+        content: Option<Range<u32>>,
         parent: u32,
         ordered: bool,
         document: &mut Document,
     ) -> Result<()> {
-        assert!(item.end <= self.source.len());
-        assert!(content.as_ref().is_none_or(|content| content.end <= self.source.len()));
+        assert!(item.end as usize <= self.source.len());
+        assert!(content.as_ref().is_none_or(|content| content.end as usize <= self.source.len()));
         assert!(parent < document.node_count());
 
         let start = if ordered { self.attribute_u32(&item, b"order", 1)? } else { 1 };
@@ -279,13 +286,13 @@ impl Reader<'_> {
 
     fn block(
         &mut self,
-        content: Option<Range<usize>>,
+        content: Option<Range<u32>>,
         parent: u32,
         kind: NodeKind,
         document: &mut Document,
     ) -> Result<()> {
         assert!(parent < document.node_count());
-        assert!(content.as_ref().is_none_or(|content| content.end <= self.source.len()));
+        assert!(content.as_ref().is_none_or(|content| content.end as usize <= self.source.len()));
         assert!(kind.is_block());
 
         let node = document.node_append(parent, kind)?;
@@ -293,28 +300,23 @@ impl Reader<'_> {
         content.map_or(Ok(()), |content| self.frame_push(content, node, false))
     }
 
-    fn transparent(
-        &mut self,
-        content: Option<Range<usize>>,
-        parent: u32,
-        code: bool,
-    ) -> Result<()> {
+    fn transparent(&mut self, content: Option<Range<u32>>, parent: u32, code: bool) -> Result<()> {
         assert!(parent < NODE_COUNT_MAX);
-        assert!(content.as_ref().is_none_or(|content| content.end <= self.source.len()));
-        assert!(self.frame_count as usize <= FRAME_COUNT_MAX);
+        assert!(content.as_ref().is_none_or(|content| content.end as usize <= self.source.len()));
+        assert!(self.frame_count <= FRAME_COUNT_MAX);
 
         content.map_or(Ok(()), |content| self.frame_push(content, parent, code))
     }
 
     fn quote(
         &mut self,
-        item: Range<usize>,
-        content: Option<Range<usize>>,
+        item: Range<u32>,
+        content: Option<Range<u32>>,
         parent: u32,
         document: &mut Document,
     ) -> Result<()> {
-        assert!(item.end <= self.source.len());
-        assert!(content.as_ref().is_none_or(|content| content.end <= self.source.len()));
+        assert!(item.end as usize <= self.source.len());
+        assert!(content.as_ref().is_none_or(|content| content.end as usize <= self.source.len()));
         assert!(parent < document.node_count());
 
         let node = document.node_append(parent, NodeKind::BlockQuote)?;
@@ -332,13 +334,13 @@ impl Reader<'_> {
 
     fn task_item(
         &mut self,
-        item: Range<usize>,
-        content: Option<Range<usize>>,
+        item: Range<u32>,
+        content: Option<Range<u32>>,
         parent: u32,
         document: &mut Document,
     ) -> Result<()> {
-        assert!(item.end <= self.source.len());
-        assert!(content.as_ref().is_none_or(|content| content.end <= self.source.len()));
+        assert!(item.end as usize <= self.source.len());
+        assert!(content.as_ref().is_none_or(|content| content.end as usize <= self.source.len()));
         assert!(parent < document.node_count());
 
         let task = match self.attribute(&item, b"state")? {
@@ -360,13 +362,13 @@ impl Reader<'_> {
 
     fn code_block(
         &mut self,
-        item: Range<usize>,
-        content: Option<Range<usize>>,
+        item: Range<u32>,
+        content: Option<Range<u32>>,
         parent: u32,
         document: &mut Document,
     ) -> Result<()> {
-        assert!(item.end <= self.source.len());
-        assert!(content.as_ref().is_none_or(|content| content.end <= self.source.len()));
+        assert!(item.end as usize <= self.source.len());
+        assert!(content.as_ref().is_none_or(|content| content.end as usize <= self.source.len()));
         assert!(parent < document.node_count());
 
         let language = self.attribute_text(&item, b"language", document)?;
@@ -377,14 +379,14 @@ impl Reader<'_> {
 
     fn cell(
         &mut self,
-        item: Range<usize>,
-        content: Option<Range<usize>>,
+        item: Range<u32>,
+        content: Option<Range<u32>>,
         parent: u32,
         header: bool,
         document: &mut Document,
     ) -> Result<()> {
-        assert!(item.end <= self.source.len());
-        assert!(content.as_ref().is_none_or(|content| content.end <= self.source.len()));
+        assert!(item.end as usize <= self.source.len());
+        assert!(content.as_ref().is_none_or(|content| content.end as usize <= self.source.len()));
         assert!(parent < document.node_count());
 
         let colspan = self.attribute_u32(&item, b"colspan", 1)?.clamp(1, TABLE_COLSPAN_MAX);
@@ -395,12 +397,12 @@ impl Reader<'_> {
 
     fn text(
         &self,
-        item: Range<usize>,
+        item: Range<u32>,
         parent: u32,
         code: bool,
         document: &mut Document,
     ) -> Result<()> {
-        assert!(item.end <= self.source.len());
+        assert!(item.end as usize <= self.source.len());
         assert!(parent < document.node_count());
 
         let (marks, href) =
@@ -418,8 +420,8 @@ impl Reader<'_> {
         text_place(parent, TextRun { href, marks, text }, document)
     }
 
-    fn marks(&self, item: &Range<usize>, document: &mut Document) -> Result<(Marks, Span)> {
-        assert!(item.end <= self.source.len());
+    fn marks(&self, item: &Range<u32>, document: &mut Document) -> Result<(Marks, Span)> {
+        assert!(item.end as usize <= self.source.len());
 
         let mut marks = Marks::NONE;
         let mut href = Span::EMPTY;
@@ -455,11 +457,11 @@ impl Reader<'_> {
 
     fn inline_attribute_text(
         &self,
-        item: Range<usize>,
+        item: Range<u32>,
         parent: u32,
         document: &mut Document,
     ) -> Result<()> {
-        assert!(item.end <= self.source.len());
+        assert!(item.end as usize <= self.source.len());
         assert!(parent < document.node_count());
 
         let mut text = self.attribute_text(&item, b"text", document)?;
@@ -475,15 +477,15 @@ impl Reader<'_> {
         text_place(parent, TextRun { href: Span::EMPTY, marks: Marks::NONE, text }, document)
     }
 
-    fn date(&self, item: Range<usize>, parent: u32, document: &mut Document) -> Result<()> {
-        assert!(item.end <= self.source.len());
+    fn date(&self, item: Range<u32>, parent: u32, document: &mut Document) -> Result<()> {
+        assert!(item.end as usize <= self.source.len());
         assert!(parent < document.node_count());
 
         let Some(timestamp) = self.attribute(&item, b"timestamp")? else {
             return Ok(());
         };
 
-        let raw = &self.source[timestamp];
+        let raw = &self.source[range_from_u32(&timestamp)];
         let digits = if raw.first() == Some(&b'"') { &raw[1..raw.len() - 1] } else { raw };
         let mut milliseconds: u64 = 0;
 
@@ -504,8 +506,8 @@ impl Reader<'_> {
         text_place(parent, TextRun { href: Span::EMPTY, marks: Marks::NONE, text }, document)
     }
 
-    fn card(&self, item: Range<usize>, parent: u32, document: &mut Document) -> Result<()> {
-        assert!(item.end <= self.source.len());
+    fn card(&self, item: Range<u32>, parent: u32, document: &mut Document) -> Result<()> {
+        assert!(item.end as usize <= self.source.len());
         assert!(parent < document.node_count());
 
         let url = self.attribute_text(&item, b"url", document)?;
@@ -517,8 +519,8 @@ impl Reader<'_> {
         text_place(parent, TextRun { href: url, marks: Marks::NONE, text: url }, document)
     }
 
-    fn media(&self, item: Range<usize>, parent: u32, document: &mut Document) -> Result<()> {
-        assert!(item.end <= self.source.len());
+    fn media(&self, item: Range<u32>, parent: u32, document: &mut Document) -> Result<()> {
+        assert!(item.end as usize <= self.source.len());
         assert!(parent < document.node_count());
 
         let mut alt = self.attribute_text(&item, b"alt", document)?;
@@ -583,11 +585,11 @@ fn text_place(parent: u32, run: TextRun, document: &mut Document) -> Result<()> 
 
 fn string_decode_into(
     source: &[u8],
-    range: Range<usize>,
+    range: Range<u32>,
     document: &mut Document,
     span: &mut Span,
 ) -> Result<()> {
-    assert!(range.end <= source.len());
+    assert!(range.end as usize <= source.len());
     assert!(span.end() == document.text_length());
 
     string_decode(source, range, document)?;

@@ -5,7 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::PoisonError;
 
-const CORPUS_FILE_COUNT_MIN: usize = 250;
+const CORPUS_FILE_COUNT_MIN: u32 = 250;
 
 fn directory_entries(directory: &Path) -> Vec<fs::DirEntry> {
     assert!(directory.is_dir());
@@ -57,7 +57,7 @@ fn corpus_documents_convert_or_error_cleanly() {
     let mut scratch = SCRATCH.lock().unwrap_or_else(PoisonError::into_inner);
     let files = corpus_files();
 
-    assert!(files.len() > CORPUS_FILE_COUNT_MIN, "corpus holds {} files", files.len());
+    assert!(files.len() > CORPUS_FILE_COUNT_MIN as usize, "corpus holds {} files", files.len());
 
     let mut mismatches = Vec::new();
     let mut errors = 0usize;
@@ -68,19 +68,22 @@ fn corpus_documents_convert_or_error_cleanly() {
 
         let actual = match guarded(|| docx::read(&archive, &mut workspace, &mut document)) {
             Ok(()) => {
-                let length = guarded(|| markdown::write(&document, &mut output[..])).unwrap();
+                let length =
+                    guarded(|| markdown::write(&document, &mut output[..])).unwrap() as usize;
                 let text = String::from_utf8(output[..length].to_vec()).unwrap();
-                let adf_length = guarded(|| adf::write(&document, &mut scratch[..])).unwrap();
+                let adf_length =
+                    guarded(|| adf::write(&document, &mut scratch[..])).unwrap() as usize;
 
                 guarded(|| adf::read(&scratch[..adf_length], &mut document)).unwrap();
 
                 let docx_length =
-                    guarded(|| docx::write(&document, &mut workspace, &mut scratch[..])).unwrap();
+                    guarded(|| docx::write(&document, &mut workspace, &mut scratch[..])).unwrap()
+                        as usize;
 
                 guarded(|| docx::read(&scratch[..docx_length], &mut workspace, &mut document))
                     .unwrap();
 
-                guarded(|| markdown::write(&document, &mut output[..])).unwrap();
+                guarded(|| markdown::write(&document, &mut output[..])).unwrap() as usize;
 
                 text
             }

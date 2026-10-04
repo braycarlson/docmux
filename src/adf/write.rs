@@ -46,7 +46,7 @@ struct Writer<'a, 'b, 'c> {
     wrappers: [Wrapper; WRAPPER_COUNT_MAX],
 }
 
-pub fn write(document: &Document, output: &mut [u8]) -> Result<usize> {
+pub fn write(document: &Document, output: &mut [u8]) -> Result<u32> {
     assert!(document.node_count() >= 1);
     assert!(document.node(NODE_ROOT).kind == NodeKind::Document);
 

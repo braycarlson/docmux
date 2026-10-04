@@ -1,4 +1,5 @@
 use crate::error::{Error, Result};
+use core::ops::Range;
 use core::str;
 
 pub(crate) const DECIMAL_DIGIT_COUNT_MAX: usize = 10;
@@ -6,65 +7,71 @@ pub(crate) const DECIMAL_DIGIT_COUNT_MAX: usize = 10;
 #[derive(Debug)]
 pub(crate) struct Sink<'a> {
     buffer: &'a mut [u8],
-    length: usize,
+    length: u32,
 }
 
 impl<'a> Sink<'a> {
-    pub(crate) const fn new(buffer: &'a mut [u8]) -> Self {
-        Self { buffer, length: 0 }
+    pub(crate) fn new(buffer: &'a mut [u8]) -> Self {
+        let capacity = buffer.len().min(u32::MAX as usize);
+
+        Self { buffer: &mut buffer[..capacity], length: 0 }
     }
 
-    pub(crate) fn length(&self) -> usize {
-        assert!(self.length <= self.buffer.len());
+    pub(crate) fn length(&self) -> u32 {
+        assert!(self.length as usize <= self.buffer.len());
 
         self.length
     }
 
     pub(crate) fn write(&mut self, bytes: &[u8]) -> Result<()> {
-        assert!(self.length <= self.buffer.len());
+        assert!(self.length as usize <= self.buffer.len());
 
-        let end = self.length + bytes.len();
+        let start = self.length as usize;
+        let end = start + bytes.len();
 
         if end > self.buffer.len() {
             return Err(Error::OutputCapacity);
         }
 
-        self.buffer[self.length..end].copy_from_slice(bytes);
-        self.length = end;
+        self.buffer[start..end].copy_from_slice(bytes);
+        self.length = u32_from_usize(end);
 
-        assert!(self.length <= self.buffer.len());
+        assert!(self.length as usize <= self.buffer.len());
 
         Ok(())
     }
 
     pub(crate) fn write_byte(&mut self, byte: u8) -> Result<()> {
-        assert!(self.length <= self.buffer.len());
+        assert!(self.length as usize <= self.buffer.len());
 
-        if self.length == self.buffer.len() {
+        let index = self.length as usize;
+
+        if index == self.buffer.len() {
             return Err(Error::OutputCapacity);
         }
 
-        self.buffer[self.length] = byte;
+        self.buffer[index] = byte;
         self.length += 1;
 
-        assert!(self.length <= self.buffer.len());
+        assert!(self.length as usize <= self.buffer.len());
 
         Ok(())
     }
 
     pub(crate) fn write_repeat(&mut self, byte: u8, count: usize) -> Result<()> {
-        assert!(self.length <= self.buffer.len());
+        assert!(self.length as usize <= self.buffer.len());
 
-        let end = self.length + count;
+        let start = self.length as usize;
+        let end = start + count;
 
         if end > self.buffer.len() {
             return Err(Error::OutputCapacity);
         }
 
-        self.buffer[self.length..end].fill(byte);
-        self.length = end;
+        self.buffer[start..end].fill(byte);
+        self.length = u32_from_usize(end);
 
-        assert!(self.length <= self.buffer.len());
+        assert!(self.length as usize <= self.buffer.len());
 
         Ok(())
     }
@@ -87,7 +94,7 @@ impl<'a> Sink<'a> {
     }
 
     pub(crate) fn write_u32_le_at(&mut self, offset: usize, value: u32) {
-        assert!(offset + 4 <= self.length);
+        assert!(offset + 4 <= self.length as usize);
 
         self.buffer[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
 
@@ -95,9 +102,9 @@ impl<'a> Sink<'a> {
     }
 
     pub(crate) fn written(&self) -> &[u8] {
-        assert!(self.length <= self.buffer.len());
+        assert!(self.length as usize <= self.buffer.len());
 
-        &self.buffer[..self.length]
+        &self.buffer[..self.length as usize]
     }
 }
 
@@ -139,6 +146,18 @@ pub(crate) fn u32_from_usize(value: usize) -> u32 {
     assert!(narrow as usize == value);
 
     narrow
+}
+
+pub(crate) const fn range_from_u32(range: &Range<u32>) -> Range<usize> {
+    assert!(range.start <= range.end);
+
+    range.start as usize..range.end as usize
+}
+
+pub(crate) fn range_from_usize(range: &Range<usize>) -> Range<u32> {
+    assert!(range.start <= range.end);
+
+    u32_from_usize(range.start)..u32_from_usize(range.end)
 }
 
 pub(crate) fn decimal_format_u32(

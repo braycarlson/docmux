@@ -2,7 +2,7 @@ use crate::bytes::{u8_from_u32, u16_from_usize, u32_from_usize};
 use crate::error::{Error, Result};
 use crate::workspace::PART_BYTES_MAX;
 
-const CODE_LENGTH_ORDER: [usize; 19] =
+const CODE_LENGTH_ORDER: [u8; 19] =
     [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];
 const CODE_LENGTH_MAX: usize = 15;
 
@@ -175,12 +175,12 @@ struct Bits<'a> {
     bit_buffer: u32,
     bit_count: u32,
     input: &'a [u8],
-    position: usize,
+    position: u32,
 }
 
 impl Bits<'_> {
-    fn malformed(&self) -> Error {
-        Error::DeflateMalformed { offset: u32_from_usize(self.position) }
+    const fn malformed(&self) -> Error {
+        Error::DeflateMalformed { offset: self.position }
     }
 
     fn take(&mut self, count: u32) -> Result<u32> {
@@ -192,11 +192,11 @@ impl Bits<'_> {
                 break;
             }
 
-            if self.position >= self.input.len() {
+            if self.position as usize >= self.input.len() {
                 return Err(self.malformed());
             }
 
-            self.bit_buffer |= u32::from(self.input[self.position]) << self.bit_count;
+            self.bit_buffer |= u32::from(self.input[self.position as usize]) << self.bit_count;
             self.position += 1;
             self.bit_count += 8;
         }
@@ -247,7 +247,7 @@ impl Bits<'_> {
 #[derive(Debug)]
 struct Output<'a> {
     buffer: &'a mut [u8],
-    length: usize,
+    length: u32,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -258,41 +258,45 @@ struct BackReference {
 
 impl Output<'_> {
     fn write(&mut self, byte: u8) -> bool {
-        assert!(self.length <= self.buffer.len());
+        assert!(self.length as usize <= self.buffer.len());
 
-        if self.length >= self.buffer.len() {
+        let index = self.length as usize;
+
+        if index >= self.buffer.len() {
             return false;
         }
 
-        self.buffer[self.length] = byte;
+        self.buffer[index] = byte;
         self.length += 1;
 
-        assert!(self.length <= self.buffer.len());
+        assert!(self.length as usize <= self.buffer.len());
 
         true
     }
 
     fn copy_back(&mut self, reference: BackReference) -> bool {
-        assert!(self.length <= self.buffer.len());
+        assert!(self.length as usize <= self.buffer.len());
         assert!(reference.distance >= 1);
 
         let distance = reference.distance as usize;
-        let length = reference.length as usize;
+        let start = self.length as usize;
+        let end = start + reference.length as usize;
 
-        if distance > self.length {
+        if distance > start {
             return false;
         }
 
-        if self.length + length > self.buffer.len() {
+        if end > self.buffer.len() {
             return false;
         }
 
-        for _ in 0..length {
-            self.buffer[self.length] = self.buffer[self.length - distance];
-            self.length += 1;
+        for index in start..end {
+            self.buffer[index] = self.buffer[index - distance];
         }
 
-        assert!(self.length <= self.buffer.len());
+        self.length += reference.length;
+
+        assert!(self.length as usize <= self.buffer.len());
 
         true
     }
@@ -300,6 +304,7 @@ impl Output<'_> {
 
 pub(crate) fn inflate(input: &[u8], output: &mut [u8]) -> Result<usize> {
     assert!(input.len() <= PART_BYTES_MAX as usize);
+    assert!(output.len() <= PART_BYTES_MAX as usize);
 
     let mut bits = Bits { bit_buffer: 0, bit_count: 0, input, position: 0 };
     let mut out = Output { buffer: output, length: 0 };
@@ -323,9 +328,9 @@ pub(crate) fn inflate(input: &[u8], output: &mut [u8]) -> Result<usize> {
         }
 
         if last {
-            assert!(out.length <= out.buffer.len());
+            assert!(out.length as usize <= out.buffer.len());
 
-            return Ok(out.length);
+            return Ok(out.length as usize);
         }
     }
 
@@ -333,18 +338,19 @@ pub(crate) fn inflate(input: &[u8], output: &mut [u8]) -> Result<usize> {
 }
 
 fn block_stored(bits: &mut Bits<'_>, out: &mut Output<'_>) -> Result<()> {
-    assert!(bits.position <= bits.input.len());
-    assert!(out.length <= out.buffer.len());
+    assert!(bits.position as usize <= bits.input.len());
+    assert!(out.length as usize <= out.buffer.len());
 
     bits.align_to_byte();
 
-    let header_end = bits.position + 4;
+    let header_start = bits.position as usize;
+    let header_end = header_start + 4;
 
     if header_end > bits.input.len() {
         return Err(bits.malformed());
     }
 
-    let header = &bits.input[bits.position..header_end];
+    let header = &bits.input[header_start..header_end];
 
     assert!(header.len() == 4);
 
@@ -367,7 +373,7 @@ fn block_stored(bits: &mut Bits<'_>, out: &mut Output<'_>) -> Result<()> {
         }
     }
 
-    bits.position = data_end;
+    bits.position = u32_from_usize(data_end);
 
     Ok(())
 }
@@ -385,7 +391,7 @@ fn codes_fixed(codes: &mut Codes) {
 }
 
 fn codes_dynamic(bits: &mut Bits<'_>, codes: &mut Codes) -> Result<()> {
-    assert!(bits.position <= bits.input.len());
+    assert!(bits.position as usize <= bits.input.len());
 
     let literal_count = bits.take(5)? as usize + 257;
     let distance_count = bits.take(5)? as usize + 1;
@@ -404,7 +410,7 @@ fn codes_dynamic(bits: &mut Bits<'_>, codes: &mut Codes) -> Result<()> {
     let mut lengths = [0u8; LITERAL_SYMBOL_COUNT_MAX + DISTANCE_SYMBOL_COUNT_MAX];
 
     for &order in &CODE_LENGTH_ORDER[..code_length_count] {
-        lengths[order] = u8_from_u32(bits.take(3)?);
+        lengths[usize::from(order)] = u8_from_u32(bits.take(3)?);
     }
 
     let mut code_lengths = Huffman::EMPTY;
@@ -437,7 +443,7 @@ fn code_lengths_read(
     code_lengths: &Huffman,
     lengths: &mut [u8],
 ) -> Result<()> {
-    assert!(bits.position <= bits.input.len());
+    assert!(bits.position as usize <= bits.input.len());
     assert!(lengths.len() <= LITERAL_SYMBOL_COUNT_MAX + DISTANCE_SYMBOL_COUNT_MAX);
 
     let total = lengths.len();
@@ -485,8 +491,8 @@ fn code_lengths_read(
 }
 
 fn block_codes(bits: &mut Bits<'_>, out: &mut Output<'_>, codes: &Codes) -> Result<()> {
-    assert!(bits.position <= bits.input.len());
-    assert!(out.length <= out.buffer.len());
+    assert!(bits.position as usize <= bits.input.len());
+    assert!(out.length as usize <= out.buffer.len());
 
     for _ in 0..=out.buffer.len() {
         let symbol = bits.decode(&codes.literal)?;

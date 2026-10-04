@@ -1,4 +1,4 @@
-use crate::bytes::Sink;
+use crate::bytes::{Sink, u32_from_usize};
 use crate::document::{
     Alignment,
     Document,
@@ -43,7 +43,7 @@ struct Writer<'a, 'b, 'c> {
     sink: &'b mut Sink<'a>,
 }
 
-pub fn write(document: &Document, raw: HTMLRaw, output: &mut [u8]) -> Result<usize> {
+pub fn write(document: &Document, raw: HTMLRaw, output: &mut [u8]) -> Result<u32> {
     assert!(document.node_count() >= 1);
     assert!(document.node(NODE_ROOT).kind == NodeKind::Document);
 
@@ -516,7 +516,7 @@ fn text_escape(text: &[u8], sink: &mut Sink<'_>) -> Result<()> {
         }
     }
 
-    assert!(sink.length() >= before + text.len());
+    assert!(sink.length() >= before + u32_from_usize(text.len()));
 
     Ok(())
 }
@@ -534,7 +534,7 @@ fn tagfilter_write(bytes: &[u8], sink: &mut Sink<'_>) -> Result<()> {
         }
     }
 
-    assert!(sink.length() >= before + bytes.len());
+    assert!(sink.length() >= before + u32_from_usize(bytes.len()));
 
     Ok(())
 }

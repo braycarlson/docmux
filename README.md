@@ -53,7 +53,7 @@ static DOCUMENT: Mutex<Document> = Mutex::new(Document::EMPTY);
 static WORKSPACE: Mutex<Workspace> = Mutex::new(Workspace::EMPTY);
 static OUTPUT: Mutex<[u8; 4 << 20]> = Mutex::new([0; 4 << 20]);
 
-fn markdown_to_docx(source: &[u8]) -> Result<usize, docmux::Error> {
+fn markdown_to_docx(source: &[u8]) -> Result<u32, docmux::Error> {
     let mut document = DOCUMENT.lock().unwrap();
     let mut workspace = WORKSPACE.lock().unwrap();
     let mut output = OUTPUT.lock().unwrap();

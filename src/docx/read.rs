@@ -377,7 +377,7 @@ fn body_parse(part: &[u8], tables: Tables<'_>, document: &mut Document) -> Resul
     }
 
     if reader.frame_count != 1 {
-        return Err(Error::DocxMalformed { offset: u32_from_usize(xml.position()) });
+        return Err(Error::DocxMalformed { offset: xml.position() });
     }
 
     Ok(())
@@ -546,7 +546,7 @@ impl Reader<'_> {
         for _ in 0..u32::MAX {
             match xml.next()? {
                 XMLEvent::Finished => {
-                    return Err(Error::DocxMalformed { offset: u32_from_usize(xml.position()) });
+                    return Err(Error::DocxMalformed { offset: xml.position() });
                 }
                 XMLEvent::Start { .. } => depth += 1,
                 XMLEvent::End { name } => {
@@ -565,7 +565,7 @@ impl Reader<'_> {
             }
         }
 
-        Err(Error::DocxMalformed { offset: u32_from_usize(xml.position()) })
+        Err(Error::DocxMalformed { offset: xml.position() })
     }
 
     fn paragraph_property(&mut self, element: Element<'_>) {
@@ -598,7 +598,7 @@ impl Reader<'_> {
         for _ in 0..u32::MAX {
             match xml.next()? {
                 XMLEvent::Finished => {
-                    return Err(Error::DocxMalformed { offset: u32_from_usize(xml.position()) });
+                    return Err(Error::DocxMalformed { offset: xml.position() });
                 }
                 XMLEvent::Start { .. } => depth += 1,
                 XMLEvent::End { .. } => {
@@ -615,7 +615,7 @@ impl Reader<'_> {
             }
         }
 
-        Err(Error::DocxMalformed { offset: u32_from_usize(xml.position()) })
+        Err(Error::DocxMalformed { offset: xml.position() })
     }
 
     fn run_property(&mut self, element: Element<'_>) {
@@ -1055,7 +1055,7 @@ impl Reader<'_> {
         for _ in 0..u32::MAX {
             match xml.next()? {
                 XMLEvent::Finished => {
-                    return Err(Error::DocxMalformed { offset: u32_from_usize(xml.position()) });
+                    return Err(Error::DocxMalformed { offset: xml.position() });
                 }
                 XMLEvent::Start { .. } => depth += 1,
                 XMLEvent::End { .. } => {
@@ -1074,7 +1074,7 @@ impl Reader<'_> {
             }
         }
 
-        Err(Error::DocxMalformed { offset: u32_from_usize(xml.position()) })
+        Err(Error::DocxMalformed { offset: xml.position() })
     }
 
     fn row_end(&mut self, document: &mut Document) -> Result<()> {
@@ -1140,7 +1140,7 @@ impl Reader<'_> {
         for _ in 0..u32::MAX {
             match xml.next()? {
                 XMLEvent::Finished => {
-                    return Err(Error::DocxMalformed { offset: u32_from_usize(xml.position()) });
+                    return Err(Error::DocxMalformed { offset: xml.position() });
                 }
                 XMLEvent::Start { .. } => depth += 1,
                 XMLEvent::End { .. } => {
@@ -1160,7 +1160,7 @@ impl Reader<'_> {
             }
         }
 
-        Err(Error::DocxMalformed { offset: u32_from_usize(xml.position()) })
+        Err(Error::DocxMalformed { offset: xml.position() })
     }
 
     fn cell_end(&mut self) -> Result<()> {
@@ -1194,7 +1194,7 @@ impl Reader<'_> {
         for _ in 0..u32::MAX {
             match xml.next()? {
                 XMLEvent::Finished => {
-                    return Err(Error::DocxMalformed { offset: u32_from_usize(xml.position()) });
+                    return Err(Error::DocxMalformed { offset: xml.position() });
                 }
                 XMLEvent::Start { attributes, name } => {
                     depth += 1;

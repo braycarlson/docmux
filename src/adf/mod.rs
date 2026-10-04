@@ -19,7 +19,7 @@ mod tests {
             markdown::read(source.as_bytes(), markdown::Options::GFM, workspace, document).unwrap();
 
             let mut adf = vec![0u8; 1 << 16];
-            let adf_length = write(document, &mut adf).unwrap();
+            let adf_length = write(document, &mut adf).unwrap() as usize;
 
             assert!(adf_length > 0);
 
@@ -28,7 +28,7 @@ mod tests {
             read(&adf[..adf_length], document).unwrap();
 
             let mut output = vec![0u8; 1 << 16];
-            let length = markdown::write(document, &mut output).unwrap();
+            let length = markdown::write(document, &mut output).unwrap() as usize;
 
             assert!(length <= output.len());
 
@@ -118,7 +118,7 @@ mod tests {
             read(source, document).unwrap();
 
             let mut output = vec![0u8; 1 << 16];
-            let length = markdown::write(document, &mut output).unwrap();
+            let length = markdown::write(document, &mut output).unwrap() as usize;
 
             assert!(length > 0);
 
